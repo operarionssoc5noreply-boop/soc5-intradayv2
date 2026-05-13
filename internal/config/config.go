@@ -52,9 +52,9 @@ type ReportConfig struct {
 	RequireInlineImage bool
 	SendPDFFile        bool
 	SheetURL           string
-	ImageDPI           int
-	ImageMaxWidth      int
-	ImageMarginInches  float64
+	PDFDPI             int
+	ImageResizeWidth   int
+	ImageBorderPX      int
 	MaxBase64Bytes     int
 }
 
@@ -98,9 +98,9 @@ func Load() (Config, error) {
 			RequireInlineImage: getBool("REPORT_REQUIRE_INLINE_CARD_IMAGE", true),
 			SendPDFFile:        getBool("REPORT_SEND_PDF_FILE", false),
 			SheetURL:           getEnv("REPORT_SHEET_URL", defaultReportSheetURL),
-			ImageDPI:           getInt("REPORT_IMAGE_DPI", 160),
-			ImageMaxWidth:      getInt("REPORT_IMAGE_MAX_WIDTH", 1800),
-			ImageMarginInches:  getFloat("REPORT_IMAGE_MARGIN_INCHES", 1),
+			PDFDPI:             getInt("BOT_PDF_DPI", getInt("REPORT_IMAGE_DPI", 220)),
+			ImageResizeWidth:   getInt("BOT_IMAGE_RESIZE_WIDTH", getInt("REPORT_IMAGE_MAX_WIDTH", 2200)),
+			ImageBorderPX:      getInt("BOT_IMAGE_BORDER_PX", 20),
 			MaxBase64Bytes:     getInt("SEATALK_MAX_BASE64_BYTES", 5*1024*1024),
 		},
 	}
@@ -164,18 +164,6 @@ func getInt(key string, fallback int) int {
 		return fallback
 	}
 	parsed, err := strconv.Atoi(value)
-	if err != nil {
-		return fallback
-	}
-	return parsed
-}
-
-func getFloat(key string, fallback float64) float64 {
-	value := strings.TrimSpace(os.Getenv(key))
-	if value == "" {
-		return fallback
-	}
-	parsed, err := strconv.ParseFloat(value, 64)
 	if err != nil {
 		return fallback
 	}

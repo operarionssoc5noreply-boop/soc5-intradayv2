@@ -13,7 +13,7 @@ Lightweight Go server that reads SeaTalk group IDs from a Google Sheet, exports 
 - Hourly scheduler plus manual trigger endpoint.
 - Group recipients from `bot_config!A2:A`.
 - FMS status text from `intraday!AE2`.
-- Rendered report image trimmed to content with a 1-inch white margin.
+- Rendered report image trimmed to content with a 20px white border.
 - Docker runtime with `poppler-utils` and `imagemagick`.
 
 ## Setup

@@ -5,7 +5,6 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
-	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -80,7 +79,7 @@ func (r *Reporter) RunOnce(ctx context.Context) error {
 	pngPath := filepath.Join(runDir, "report.png")
 	var png []byte
 	if r.cfg.Report.SendImage {
-		if err := ConvertPDFToPNG(ctx, pdfPath, pngPath, r.cfg.Report.ImageDPI, r.cfg.Report.ImageMaxWidth, r.cfg.Report.ImageMarginInches); err != nil {
+		if err := ConvertPDFToPNG(ctx, pdfPath, pngPath, r.cfg.Report.PDFDPI, r.cfg.Report.ImageResizeWidth, r.cfg.Report.ImageBorderPX); err != nil {
 			return fmt.Errorf("convert pdf to png: %w", err)
 		}
 		png, err = os.ReadFile(pngPath)
@@ -227,9 +226,9 @@ func withoutImageElement(elements []seatalk.CardElement) []seatalk.CardElement {
 	return filtered
 }
 
-func ConvertPDFToPNG(ctx context.Context, pdfPath, pngPath string, dpi, maxWidth int, marginInches float64) error {
+func ConvertPDFToPNG(ctx context.Context, pdfPath, pngPath string, dpi, maxWidth, borderPX int) error {
 	if dpi <= 0 {
-		dpi = 160
+		dpi = 220
 	}
 	tmpDir := filepath.Join(filepath.Dir(pngPath), "pages")
 	if err := os.MkdirAll(tmpDir, 0o755); err != nil {
@@ -258,9 +257,8 @@ func ConvertPDFToPNG(ctx context.Context, pdfPath, pngPath string, dpi, maxWidth
 		args = append(args, "-resize", fmt.Sprintf("%dx>", maxWidth))
 	}
 	args = append(args, "-background", "white", "-alpha", "remove", "-alpha", "off", "-append", "-fuzz", "1%", "-trim", "+repage")
-	marginPixels := int(math.Round(float64(dpi) * marginInches))
-	if marginPixels > 0 {
-		margin := fmt.Sprintf("%dx%d", marginPixels, marginPixels)
+	if borderPX > 0 {
+		margin := fmt.Sprintf("%dx%d", borderPX, borderPX)
 		args = append(args, "-bordercolor", "white", "-border", margin)
 	}
 	args = append(args, "-strip", pngPath)

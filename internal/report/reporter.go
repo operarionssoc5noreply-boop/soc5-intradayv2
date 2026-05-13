@@ -5,6 +5,7 @@ import (
 	"encoding/base64"
 	"fmt"
 	"log"
+	"math"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -79,7 +80,7 @@ func (r *Reporter) RunOnce(ctx context.Context) error {
 	pngPath := filepath.Join(runDir, "report.png")
 	var png []byte
 	if r.cfg.Report.SendImage {
-		if err := ConvertPDFToPNG(ctx, pdfPath, pngPath, r.cfg.Report.ImageDPI, r.cfg.Report.ImageMaxWidth, r.cfg.Report.ImageBorderPixels); err != nil {
+		if err := ConvertPDFToPNG(ctx, pdfPath, pngPath, r.cfg.Report.ImageDPI, r.cfg.Report.ImageMaxWidth, r.cfg.Report.ImageMarginInches); err != nil {
 			return fmt.Errorf("convert pdf to png: %w", err)
 		}
 		png, err = os.ReadFile(pngPath)
@@ -103,9 +104,8 @@ func (r *Reporter) RunOnce(ctx context.Context) error {
 		}
 	}
 	if r.cfg.Report.SheetURL != "" {
-		cardElements = append(cardElements, seatalk.RedirectButton("Open sheet", r.cfg.Report.SheetURL))
+		cardElements = append(cardElements, seatalk.RedirectButton("View Report Link", r.cfg.Report.SheetURL))
 	}
-	cardElements = append(cardElements, seatalk.CallbackButton("Refresh now", seatalk.CallbackValueSendReportNow))
 
 	var pdf []byte
 	if r.cfg.Report.SendPDFFile {
@@ -227,7 +227,7 @@ func withoutImageElement(elements []seatalk.CardElement) []seatalk.CardElement {
 	return filtered
 }
 
-func ConvertPDFToPNG(ctx context.Context, pdfPath, pngPath string, dpi, maxWidth, borderPixels int) error {
+func ConvertPDFToPNG(ctx context.Context, pdfPath, pngPath string, dpi, maxWidth int, marginInches float64) error {
 	if dpi <= 0 {
 		dpi = 160
 	}
@@ -257,10 +257,11 @@ func ConvertPDFToPNG(ctx context.Context, pdfPath, pngPath string, dpi, maxWidth
 	if maxWidth > 0 {
 		args = append(args, "-resize", fmt.Sprintf("%dx>", maxWidth))
 	}
-	args = append(args, "-background", "white", "-alpha", "remove", "-alpha", "off", "-append")
-	if borderPixels > 0 {
-		border := fmt.Sprintf("%dx%d", borderPixels, borderPixels)
-		args = append(args, "-bordercolor", "white", "-border", border)
+	args = append(args, "-background", "white", "-alpha", "remove", "-alpha", "off", "-append", "-fuzz", "1%", "-trim", "+repage")
+	marginPixels := int(math.Round(float64(dpi) * marginInches))
+	if marginPixels > 0 {
+		margin := fmt.Sprintf("%dx%d", marginPixels, marginPixels)
+		args = append(args, "-bordercolor", "white", "-border", margin)
 	}
 	args = append(args, "-strip", pngPath)
 	binary := "magick"

@@ -6,7 +6,6 @@ import (
 	"io"
 	"log"
 	"net/http"
-	"strings"
 	"time"
 
 	"soc5-intraday/internal/config"
@@ -77,11 +76,9 @@ func (s *Server) callback(w http.ResponseWriter, r *http.Request) {
 	case seatalk.EventBotAddedToGroupChat:
 		s.handleBotAdded(r.Context(), event)
 		_, _ = w.Write([]byte(`{}`))
-	case seatalk.EventInteractiveMessageClick:
-		s.handleInteractiveClick(r.Context(), event)
-		_, _ = w.Write([]byte(`{}`))
 	case seatalk.EventNewBotSubscriber,
 		seatalk.EventMessageFromBotSubscriber,
+		seatalk.EventInteractiveMessageClick,
 		seatalk.EventBotRemovedFromGroupChat,
 		seatalk.EventNewMentionedGroupMessage:
 		log.Printf("received seatalk event %s", event.EventType)
@@ -118,28 +115,6 @@ func (s *Server) handleBotAdded(ctx context.Context, event callbackEnvelope) {
 	}()
 }
 
-func (s *Server) handleInteractiveClick(ctx context.Context, event callbackEnvelope) {
-	value := findString(event.Event, "value")
-	if !strings.EqualFold(value, seatalk.CallbackValueSendReportNow) {
-		log.Printf("interactive click ignored: value=%q", value)
-		return
-	}
-	groupID := findString(event.Event, "group_id")
-	threadID := findString(event.Event, "thread_id")
-	if groupID == "" {
-		groupID = s.cfg.SeaTalk.GroupID
-	}
-	_ = s.seatalk.SetGroupTyping(ctx, groupID, threadID)
-	go func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 2*time.Minute)
-		defer cancel()
-		if err := s.reporter.RunOnce(ctx); err != nil {
-			log.Printf("manual report failed: %v", err)
-			_, _ = s.seatalk.SendText(ctx, groupID, "Report refresh failed: "+err.Error())
-		}
-	}()
-}
-
 func nestedString(root map[string]any, keys ...string) string {
 	var current any = root
 	for _, key := range keys {
@@ -151,27 +126,4 @@ func nestedString(root map[string]any, keys ...string) string {
 	}
 	value, _ := current.(string)
 	return value
-}
-
-func findString(value any, key string) string {
-	switch typed := value.(type) {
-	case map[string]any:
-		for k, v := range typed {
-			if k == key {
-				if s, ok := v.(string); ok {
-					return s
-				}
-			}
-			if found := findString(v, key); found != "" {
-				return found
-			}
-		}
-	case []any:
-		for _, item := range typed {
-			if found := findString(item, key); found != "" {
-				return found
-			}
-		}
-	}
-	return ""
 }

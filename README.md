@@ -13,7 +13,7 @@ Lightweight Go server that reads SeaTalk group IDs from a Google Sheet, exports 
 - Hourly scheduler plus manual trigger endpoint.
 - Group recipients from `bot_config!A2:A`.
 - FMS status text from `intraday!AE2`.
-- Rendered report image with a 5px white border.
+- Rendered report image trimmed to content with a 1-inch white margin.
 - Docker runtime with `poppler-utils` and `imagemagick`.
 
 ## Setup
@@ -66,6 +66,7 @@ Each run sends:
 1. A SeaTalk interactive card titled like `SOC 5 IntraDay Update as of 12:14 PM May-13`.
 2. The card description `FMS Update: <value from intraday!AE2>`.
 3. The rendered `intraday!C1:AD37` image inside the interactive card when `REPORT_SEND_IMAGE=true` and `REPORT_INLINE_CARD_IMAGE=true`. With the default `REPORT_REQUIRE_INLINE_CARD_IMAGE=true`, the send fails instead of falling back to a separate image message if SeaTalk rejects the inline image element.
-4. An optional PDF file when `REPORT_SEND_PDF_FILE=true`.
+4. A `View Report Link` button pointing to the configured report spreadsheet URL.
+5. An optional PDF file when `REPORT_SEND_PDF_FILE=true`.
 
 SeaTalk image/file payloads are checked against `SEATALK_MAX_BASE64_BYTES`, defaulting to the documented 5 MB encoded limit.

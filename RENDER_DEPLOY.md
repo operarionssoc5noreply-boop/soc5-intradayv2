@@ -64,9 +64,10 @@ REPORT_SEND_IMAGE=true
 REPORT_INLINE_CARD_IMAGE=true
 REPORT_REQUIRE_INLINE_CARD_IMAGE=true
 REPORT_SEND_PDF_FILE=false
+REPORT_SHEET_URL=https://docs.google.com/spreadsheets/d/1NY4LFE-TmuIVjgW8vb0-j7piQemxxQm7pkN67DJFNhI/edit?gid=1394317266#gid=1394317266
 REPORT_IMAGE_DPI=160
 REPORT_IMAGE_MAX_WIDTH=1800
-REPORT_IMAGE_BORDER_PIXELS=5
+REPORT_IMAGE_MARGIN_INCHES=1
 ```
 
 Optional fallback:
@@ -145,4 +146,3 @@ Watch logs in the Render Dashboard under **Logs**.
 - Docker on Render: https://render.com/docs/docker
 - Render Deploys: https://render.com/docs/deploys
 - Render Environment Variables: https://render.com/docs/environment-variables
-

@@ -14,7 +14,6 @@ const (
 	EventNewBotSubscriber         = "new_bot_subscriber"
 	EventMessageFromBotSubscriber = "message_from_bot_subscriber"
 	EventNewMentionedGroupMessage = "new_mentioned_message_received_from_group_chat"
-	CallbackValueSendReportNow    = "send_report_now"
 )
 
 func ValidSignature(signingSecret string, body []byte, signature string) bool {

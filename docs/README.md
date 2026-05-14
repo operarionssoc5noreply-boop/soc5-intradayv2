@@ -16,6 +16,11 @@ bots/
   otp/
     Code.gs
 
+  mdt/
+    apps-script/
+      Code.gs
+      appsscript.json
+
 cmd/
   pdf-to-png-converter/      Shared Azure Container Apps service
   seatalk-callback-proxy/    Optional callback proxy for SeaTalk events
@@ -33,6 +38,7 @@ docs/
   BOT_INTRADAY.md             Intraday bot notes
   BOT_INTRADAY_APPS_SCRIPT.md Intraday Apps Script notes
   BOT_OTP.md                  OTP bot notes
+  BOT_MDT.md                  MDT-SOC5 bot notes
 ```
 
 ## Root Files To Keep
@@ -52,16 +58,16 @@ internal/              Shared Go converter package.
 
 The local `.env` file and real secrets should not be committed. They are intentionally ignored.
 
-## Shared SeaTalk App
+## SeaTalk Apps
 
-All bot workflows use the same SeaTalk app identity:
+Each Apps Script project reads its SeaTalk identity from Script Properties:
 
 ```text
-SEATALK_APP_ID=<shared-seatalk-app-id>
-SEATALK_APP_SECRET=<shared-seatalk-app-secret>
+SEATALK_APP_ID=<seatalk-app-id>
+SEATALK_APP_SECRET=<seatalk-app-secret>
 ```
 
-That means Intraday, OTP, and future workflows send messages as the same SeaTalk bot. Keep separate spreadsheet IDs, report ranges, group ID ranges, report titles, and schedules so each workflow stays independent.
+Intraday and OTP can share the same SeaTalk app identity when they should send as the same bot. MDT-SOC5 can use its own SeaTalk app identity so it appears as `MDT-SOC5`. Keep separate spreadsheet IDs, report ranges, group ID ranges, report titles, and schedules so each workflow stays independent.
 
 ## Bots
 
@@ -89,6 +95,18 @@ bots/otp/
 
 The OTP workflow uses the same SeaTalk app credentials as Intraday, but should have its own spreadsheet, ranges, group IDs, report title, and trigger schedule.
 
+### MDT-SOC5
+
+Status: done.
+
+Source:
+
+```text
+bots/mdt/apps-script/
+```
+
+This bot watches `soc5-mdt!P2:Q50` by five-minute polling. When the watch range changes, it sends one SeaTalk interactive card with the `SOC5 MDT Compliance` title, `MDT-1`/`MDT-2` description values, one image rendered from `soc5-mdt!F1:W49`, and the report link. It does not use an hourly schedule.
+
 ## Shared Azure Converter
 
 Use one Azure Container App for all bots unless you need separate billing, isolation, logs, or scaling.
@@ -113,7 +131,7 @@ For setup, use [AZURE_UI_SETUP.md](./AZURE_UI_SETUP.md).
 
 Use the callback proxy only if you need SeaTalk callback signature validation.
 
-Because all workflows use the same SeaTalk app, SeaTalk normally has one callback URL for that app. Use one callback proxy for the shared app, then forward events to one canonical Apps Script callback handler unless you add routing logic.
+SeaTalk normally has one callback URL per app. Use one callback proxy per shared app identity, or add routing logic if multiple bot workflows need callbacks behind the same proxy.
 
 For setup, use [RENDER_CALLBACK_SETUP.md](./RENDER_CALLBACK_SETUP.md).
 
@@ -124,7 +142,7 @@ For setup, use [RENDER_CALLBACK_SETUP.md](./RENDER_CALLBACK_SETUP.md).
 3. Copy or adapt an existing Apps Script workflow.
 4. Create a new Apps Script project and paste that bot's `Code.gs` and `appsscript.json` if it has one.
 5. Set that bot's Script Properties.
-6. Use the shared `SEATALK_APP_ID` and `SEATALK_APP_SECRET`.
+6. Set that bot's `SEATALK_APP_ID` and `SEATALK_APP_SECRET`.
 7. Reuse the shared Azure converter URL and token.
 8. Run `sendReportNow`, authorize, then install that bot's trigger.
 

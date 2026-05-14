@@ -1,126 +1,223 @@
 /**
- * Google Apps Script port of the SOC5 SeaTalk Otp report sender.
+ * Google Apps Script implementation for the MDT-SOC5 SeaTalk bot.
  *
  * Configure values in Project Settings > Script properties, then run
- * installHourlyTrigger() once from the Apps Script editor.
+ * installPollingTrigger() once from the Apps Script editor.
  */
 
 const DEFAULTS = {
+  BOT_NAME: 'MDT-SOC5',
   TIME_ZONE: 'Asia/Manila',
   SEATALK_API_BASE: 'https://openapi.seatalk.io',
   SEATALK_GROUP_ID: '',
+  SEATALK_EXTRA_GROUP_IDS: 'Njk3MDE2ODY2Mzc2,NDk4ODM1MTY4OTY3',
   SEATALK_WELCOME_ON_ADD: 'false',
-  GOOGLE_SPREADSHEET_ID: '1pLN46ZKWJIsidswMeoxhZwoacuFMR08sCaTFG6mLytc',
-  GOOGLE_CAPTURE_RANGE: 'Otp!C1:AD37',
-  GOOGLE_CAPTURE_RANGE2: 'otp2_hourly!A1:J24',
-  GOOGLE_FMS_UPDATE_RANGE: 'Otp!AE2',
+  GOOGLE_SPREADSHEET_ID: '1JNknAg_U_ja-5L4VIXWumytiozq-uomZTYJcFOeccFE',
   GOOGLE_GROUP_IDS_RANGE: 'bot_config!A2:A',
+  GOOGLE_WATCH_RANGE: 'soc5-mdt!P2:Q50',
+  GOOGLE_CAPTURE_RANGE: 'soc5-mdt!F1:W49',
+  GOOGLE_MDT_1_RANGE: 'soc5-mdt!P17',
+  GOOGLE_MDT_2_RANGE: 'soc5-mdt!P18',
   GOOGLE_SHEET_GID: '',
   GOOGLE_EXPORT_LANDSCAPE: 'true',
-  REPORT_TITLE_PREFIX: 'SOC 5 OTP Hourl Update as of',
-  REPORT_TITLE_PREFIX2: 'OTP-2 Hourly Update as of',
+  REPORT_TITLE_PREFIX: 'SOC5 MDT Compliance',
+  REPORT_TIMESTAMP_FORMAT: 'h:mma MMM-dd',
   REPORT_SEND_IMAGE: 'true',
-  REPORT_INLINE_CARD_IMAGE: 'true',
-  REPORT_REQUIRE_INLINE_CARD_IMAGE: 'true',
-  REPORT_SHEET_URL: 'https://docs.google.com/spreadsheets/d/1NY4LFE-TmuIVjgW8vb0-j7piQemxxQm7pkN67DJFNhI/edit?gid=1394317266#gid=1394317266',
+  REPORT_REQUIRE_IMAGE: 'true',
+  REPORT_SHEET_URL: 'https://docs.google.com/spreadsheets/d/1JNknAg_U_ja-5L4VIXWumytiozq-uomZTYJcFOeccFE/edit?gid=357651034#gid=357651034',
   PDF_TO_PNG_SERVICE_URL: '',
   PDF_TO_PNG_SERVICE_TOKEN: '',
   BOT_PDF_DPI: '220',
   BOT_IMAGE_RESIZE_WIDTH: '2200',
   BOT_IMAGE_BORDER_PX: '20',
   SEATALK_MAX_BASE64_BYTES: String(5 * 1024 * 1024),
+  WATCH_SNAPSHOT_PROPERTY: 'mdt_watch_range_snapshot',
 };
 
-function sendOtpReport() {
+function splitList_(value) {
+  return String(value || '')
+    .split(/[\n,]+/)
+    .map(function(item) {
+      return item.trim();
+    })
+    .filter(function(item) {
+      return Boolean(item);
+    });
+}
+
+function pollMdtWatchRange() {
+  const lock = LockService.getScriptLock();
+  if (!lock.tryLock(30000)) {
+    console.warn('Skipping MDT poll because another poll is still running.');
+    return { sent: false, changed: false, reason: 'lock_unavailable' };
+  }
+
+  try {
+    const cfg = loadConfig_();
+    const spreadsheet = SpreadsheetApp.openById(cfg.GOOGLE_SPREADSHEET_ID);
+    const snapshot = snapshotRange_(spreadsheet, cfg.GOOGLE_WATCH_RANGE);
+    const props = PropertiesService.getScriptProperties();
+    const previousSnapshot = props.getProperty(cfg.WATCH_SNAPSHOT_PROPERTY);
+
+    if (!previousSnapshot) {
+      props.setProperty(cfg.WATCH_SNAPSHOT_PROPERTY, snapshot);
+      console.log('Initialized MDT watch snapshot for ' + cfg.GOOGLE_WATCH_RANGE + '. No report sent.');
+      return { sent: false, changed: false, reason: 'initialized' };
+    }
+
+    if (previousSnapshot === snapshot) {
+      console.log('No MDT watch range change detected in ' + cfg.GOOGLE_WATCH_RANGE + '.');
+      return { sent: false, changed: false, reason: 'unchanged' };
+    }
+
+    props.setProperty(cfg.WATCH_SNAPSHOT_PROPERTY, snapshot);
+    const result = sendMdtReportWithConfig_(cfg, spreadsheet);
+    return { sent: true, changed: true, result: result };
+  } finally {
+    lock.releaseLock();
+  }
+}
+
+function sendMdtReport() {
   const cfg = loadConfig_();
   const spreadsheet = SpreadsheetApp.openById(cfg.GOOGLE_SPREADSHEET_ID);
+  return sendMdtReportWithConfig_(cfg, spreadsheet);
+}
+
+function sendReportNow() {
+  return sendMdtReport();
+}
+
+function sendReportToExtraGroupsNow() {
+  const cfg = loadConfig_();
+  const spreadsheet = SpreadsheetApp.openById(cfg.GOOGLE_SPREADSHEET_ID);
+  const groupIds = splitList_(cfg.SEATALK_EXTRA_GROUP_IDS);
+
+  if (groupIds.length === 0) {
+    throw new Error('No SeaTalk group IDs found in SEATALK_EXTRA_GROUP_IDS.');
+  }
+
+  const elements = buildMdtCardElements_(cfg, spreadsheet);
+  const result = sendToGroups_(cfg, groupIds, elements);
+  if (result.sent === 0) {
+    throw new Error('MDT test report was not sent to any extra SeaTalk group. ' + result.errors.join(' | '));
+  }
+  if (result.errors.length > 0) {
+    console.warn('MDT test report sent to ' + result.sent + ' extra group(s), with skipped/failed groups: ' + result.errors.join(' | '));
+  }
+
+  return result;
+}
+
+function initializeMdtWatchSnapshot() {
+  const cfg = loadConfig_();
+  const spreadsheet = SpreadsheetApp.openById(cfg.GOOGLE_SPREADSHEET_ID);
+  const snapshot = snapshotRange_(spreadsheet, cfg.GOOGLE_WATCH_RANGE);
+  PropertiesService.getScriptProperties().setProperty(cfg.WATCH_SNAPSHOT_PROPERTY, snapshot);
+  console.log('Initialized MDT watch snapshot for ' + cfg.GOOGLE_WATCH_RANGE + '.');
+  return { watchRange: cfg.GOOGLE_WATCH_RANGE, initialized: true };
+}
+
+function clearMdtWatchSnapshot() {
+  const cfg = loadConfig_();
+  PropertiesService.getScriptProperties().deleteProperty(cfg.WATCH_SNAPSHOT_PROPERTY);
+  console.log('Cleared MDT watch snapshot. The next poll will initialize without sending.');
+  return { cleared: true };
+}
+
+function checkMdtSetup() {
+  const cfg = loadConfig_();
+  const spreadsheet = SpreadsheetApp.openById(cfg.GOOGLE_SPREADSHEET_ID);
+  const groupIds = readGroupIds_(spreadsheet, cfg);
+  const pollTriggers = ScriptApp.getProjectTriggers()
+    .filter(function(trigger) {
+      return trigger.getHandlerFunction() === 'pollMdtWatchRange';
+    });
+  const props = PropertiesService.getScriptProperties();
+  const summary = {
+    botName: cfg.BOT_NAME,
+    pollingTriggerInstalled: pollTriggers.length > 0,
+    pollMdtWatchRangeTriggers: pollTriggers.length,
+    watchSnapshotInitialized: Boolean(props.getProperty(cfg.WATCH_SNAPSHOT_PROPERTY)),
+    groupIdCount: groupIds.length,
+    pdfToPngConfigured: Boolean(cfg.PDF_TO_PNG_SERVICE_URL),
+    imageRequired: cfg.REPORT_SEND_IMAGE && cfg.REPORT_REQUIRE_IMAGE,
+    spreadsheetId: cfg.GOOGLE_SPREADSHEET_ID,
+    watchRange: cfg.GOOGLE_WATCH_RANGE,
+    captureRange: cfg.GOOGLE_CAPTURE_RANGE,
+    mdt1Range: cfg.GOOGLE_MDT_1_RANGE,
+    mdt2Range: cfg.GOOGLE_MDT_2_RANGE,
+    reportSheetUrl: cfg.REPORT_SHEET_URL,
+    groupIdsRange: cfg.GOOGLE_GROUP_IDS_RANGE,
+    extraGroupIds: splitList_(cfg.SEATALK_EXTRA_GROUP_IDS),
+  };
+
+  console.log(JSON.stringify(summary, null, 2));
+
+  if (pollTriggers.length === 0) {
+    throw new Error('No polling trigger found. Run installPollingTrigger once from the Apps Script editor.');
+  }
+  if (groupIds.length === 0) {
+    throw new Error('No SeaTalk group IDs found in ' + cfg.GOOGLE_GROUP_IDS_RANGE + '. Add a group ID or set SEATALK_GROUP_ID.');
+  }
+  if (summary.imageRequired && !cfg.PDF_TO_PNG_SERVICE_URL) {
+    throw new Error('Report images are required, but PDF_TO_PNG_SERVICE_URL is not configured.');
+  }
+
+  return summary;
+}
+
+function installPollingTrigger() {
+  ScriptApp.getProjectTriggers()
+    .filter(function(trigger) {
+      return trigger.getHandlerFunction() === 'pollMdtWatchRange';
+    })
+    .forEach(function(trigger) {
+      ScriptApp.deleteTrigger(trigger);
+    });
+
+  ScriptApp.newTrigger('pollMdtWatchRange')
+    .timeBased()
+    .inTimezone(DEFAULTS.TIME_ZONE)
+    .everyMinutes(5)
+    .create();
+
+  console.log('Installed five-minute polling trigger for pollMdtWatchRange.');
+}
+
+function sendMdtReportWithConfig_(cfg, spreadsheet) {
   const groupIds = readGroupIds_(spreadsheet, cfg);
 
   if (groupIds.length === 0) {
     throw new Error('No SeaTalk group IDs found in ' + cfg.GOOGLE_GROUP_IDS_RANGE);
   }
 
-  const fmsUpdate = firstCell_(spreadsheet.getRange(cfg.GOOGLE_FMS_UPDATE_RANGE).getDisplayValues());
-  const now = new Date();
-  const timestamp = Utilities.formatDate(now, cfg.TIME_ZONE, 'h:mm a MMM-dd');
-  const descriptionText = 'FMS Update: ' + fmsUpdate;
-  const cards = [
-    buildReportCardElements_(
-      cfg,
-      spreadsheet,
-      cfg.GOOGLE_CAPTURE_RANGE,
-      cfg.REPORT_TITLE_PREFIX + ' ' + timestamp,
-      descriptionText
-    ),
-    buildReportCardElements_(
-      cfg,
-      spreadsheet,
-      cfg.GOOGLE_CAPTURE_RANGE2,
-      cfg.REPORT_TITLE_PREFIX2 + ' ' + timestamp,
-      descriptionText
-    ),
-  ];
-
-  const result = sendToGroups_(cfg, groupIds, cards);
+  const elements = buildMdtCardElements_(cfg, spreadsheet);
+  const result = sendToGroups_(cfg, groupIds, elements);
   if (result.sent === 0) {
-    throw new Error('Report was not sent to any SeaTalk group. ' + result.errors.join(' | '));
+    throw new Error('MDT report was not sent to any SeaTalk group. ' + result.errors.join(' | '));
   }
   if (result.errors.length > 0) {
-    console.warn('Report sent to ' + result.sent + ' group(s), with skipped/failed groups: ' + result.errors.join(' | '));
+    console.warn('MDT report sent to ' + result.sent + ' group(s), with skipped/failed groups: ' + result.errors.join(' | '));
   }
+
+  return result;
 }
 
-function sendReportNow() {
-  sendOtpReport();
-}
-
-function checkOtpSetup() {
-  const cfg = loadConfig_();
-  const spreadsheet = SpreadsheetApp.openById(cfg.GOOGLE_SPREADSHEET_ID);
-  const groupIds = readGroupIds_(spreadsheet, cfg);
-  const sendTriggers = ScriptApp.getProjectTriggers()
-    .filter(function(trigger) {
-      return trigger.getHandlerFunction() === 'sendOtpReport';
-    });
-  const summary = {
-    hourlyTriggerInstalled: sendTriggers.length > 0,
-    sendOtpReportTriggers: sendTriggers.length,
-    groupIdCount: groupIds.length,
-    pdfToPngConfigured: Boolean(cfg.PDF_TO_PNG_SERVICE_URL),
-    inlineCardImageRequired: cfg.REPORT_SEND_IMAGE && cfg.REPORT_INLINE_CARD_IMAGE && cfg.REPORT_REQUIRE_INLINE_CARD_IMAGE,
-    spreadsheetId: cfg.GOOGLE_SPREADSHEET_ID,
-    captureRange: cfg.GOOGLE_CAPTURE_RANGE,
-    captureRange2: cfg.GOOGLE_CAPTURE_RANGE2,
-    fmsUpdateRange: cfg.GOOGLE_FMS_UPDATE_RANGE,
-    groupIdsRange: cfg.GOOGLE_GROUP_IDS_RANGE,
-  };
-
-  console.log(JSON.stringify(summary, null, 2));
-
-  if (sendTriggers.length === 0) {
-    throw new Error('No hourly trigger found. Run installHourlyTrigger once from the Apps Script editor.');
-  }
-  if (groupIds.length === 0) {
-    throw new Error('No SeaTalk group IDs found in ' + cfg.GOOGLE_GROUP_IDS_RANGE + '. Add a group ID or set SEATALK_GROUP_ID.');
-  }
-  if (summary.inlineCardImageRequired && !cfg.PDF_TO_PNG_SERVICE_URL) {
-    throw new Error('Inline report image is required, but PDF_TO_PNG_SERVICE_URL is not configured.');
-  }
-
-  return summary;
-}
-
-function buildReportCardElements_(cfg, spreadsheet, captureRange, title, descriptionText) {
+function buildMdtCardElements_(cfg, spreadsheet) {
+  const title = cfg.REPORT_TITLE_PREFIX + ' ' + Utilities.formatDate(new Date(), cfg.TIME_ZONE, cfg.REPORT_TIMESTAMP_FORMAT);
+  const mdt1 = firstCell_(spreadsheet.getRange(cfg.GOOGLE_MDT_1_RANGE).getDisplayValues());
+  const mdt2 = firstCell_(spreadsheet.getRange(cfg.GOOGLE_MDT_2_RANGE).getDisplayValues());
   const elements = [
     titleElement_(title),
-    descriptionElement_(descriptionText),
+    descriptionElement_('MDT-1: ' + mdt1 + '\nMDT-2: ' + mdt2),
   ];
 
-  const pdfBlob = cfg.REPORT_SEND_IMAGE && cfg.REPORT_INLINE_CARD_IMAGE
-    ? exportReportPdfForRange_(spreadsheet, cfg, captureRange)
+  const pdfBlob = cfg.REPORT_SEND_IMAGE
+    ? exportReportPdfForRange_(spreadsheet, cfg, cfg.GOOGLE_CAPTURE_RANGE)
     : null;
 
-  if (cfg.REPORT_SEND_IMAGE && cfg.REPORT_INLINE_CARD_IMAGE) {
+  if (cfg.REPORT_SEND_IMAGE) {
     const imageBase64 = tryConvertPdfToPng_(cfg, pdfBlob);
     if (imageBase64) {
       elements.push(imageElement_(imageBase64));
@@ -134,7 +231,20 @@ function buildReportCardElements_(cfg, spreadsheet, captureRange, title, descrip
   return elements;
 }
 
-function sendToGroups_(cfg, groupIds, cards) {
+function snapshotRange_(spreadsheet, rangeName) {
+  const values = spreadsheet.getRange(rangeName).getDisplayValues();
+  const digest = Utilities.computeDigest(
+    Utilities.DigestAlgorithm.SHA_256,
+    JSON.stringify(values),
+    Utilities.Charset.UTF_8
+  );
+  return digest.map(function(byte) {
+    const value = byte < 0 ? byte + 256 : byte;
+    return ('0' + value.toString(16)).slice(-2);
+  }).join('');
+}
+
+function sendToGroups_(cfg, groupIds, elements) {
   const result = {
     sent: 0,
     errors: [],
@@ -142,9 +252,7 @@ function sendToGroups_(cfg, groupIds, cards) {
 
   groupIds.forEach(function(groupId) {
     try {
-      cards.forEach(function(elements) {
-        sendInteractive_(cfg, groupId, elements);
-      });
+      sendInteractive_(cfg, groupId, elements);
       result.sent++;
     } catch (err) {
       if (err.seatalkCode === 7001) {
@@ -158,25 +266,6 @@ function sendToGroups_(cfg, groupIds, cards) {
   });
 
   return result;
-}
-
-function installHourlyTrigger() {
-  ScriptApp.getProjectTriggers()
-    .filter(function(trigger) {
-      return trigger.getHandlerFunction() === 'sendOtpReport';
-    })
-    .forEach(function(trigger) {
-      ScriptApp.deleteTrigger(trigger);
-    });
-
-  ScriptApp.newTrigger('sendOtpReport')
-    .timeBased()
-    .inTimezone(DEFAULTS.TIME_ZONE)
-    .everyHours(1)
-    .nearMinute(2)
-    .create();
-
-  console.log('Installed hourly trigger for sendOtpReport near minute :02.');
 }
 
 function doPost(e) {
@@ -208,8 +297,7 @@ function loadConfig_() {
   cfg.SEATALK_WELCOME_ON_ADD = parseBool_(cfg.SEATALK_WELCOME_ON_ADD);
   cfg.GOOGLE_EXPORT_LANDSCAPE = parseBool_(cfg.GOOGLE_EXPORT_LANDSCAPE);
   cfg.REPORT_SEND_IMAGE = parseBool_(cfg.REPORT_SEND_IMAGE);
-  cfg.REPORT_INLINE_CARD_IMAGE = parseBool_(cfg.REPORT_INLINE_CARD_IMAGE);
-  cfg.REPORT_REQUIRE_INLINE_CARD_IMAGE = parseBool_(cfg.REPORT_REQUIRE_INLINE_CARD_IMAGE);
+  cfg.REPORT_REQUIRE_IMAGE = parseBool_(cfg.REPORT_REQUIRE_IMAGE);
   cfg.PDF_TO_PNG_SERVICE_URL = normalizeConverterUrl_(cfg.PDF_TO_PNG_SERVICE_URL);
   cfg.BOT_PDF_DPI = Number(cfg.BOT_PDF_DPI);
   cfg.BOT_IMAGE_RESIZE_WIDTH = Number(cfg.BOT_IMAGE_RESIZE_WIDTH);
@@ -240,6 +328,9 @@ function readGroupIds_(spreadsheet, cfg) {
   });
 
   addGroupId_(cfg.SEATALK_GROUP_ID, seen, ids);
+  splitList_(cfg.SEATALK_EXTRA_GROUP_IDS).forEach(function(groupId) {
+    addGroupId_(groupId, seen, ids);
+  });
   return ids;
 }
 
@@ -262,10 +353,6 @@ function firstCell_(values) {
     }
   }
   return '';
-}
-
-function exportReportPdf_(spreadsheet, cfg) {
-  return exportReportPdfForRange_(spreadsheet, cfg, cfg.GOOGLE_CAPTURE_RANGE);
 }
 
 function exportReportPdfForRange_(spreadsheet, cfg, captureRange) {
@@ -306,25 +393,25 @@ function exportReportPdfForRange_(spreadsheet, cfg, captureRange) {
     muteHttpExceptions: true,
   });
 
-  assertOk_(response, 'Export Google Sheet PDF');
-  return response.getBlob().setName('report.pdf');
+  assertOk_(response, 'Export Google Sheet PDF for ' + captureRange);
+  return response.getBlob().setName('mdt-report.pdf');
 }
 
 function tryConvertPdfToPng_(cfg, pdfBlob) {
   try {
     return convertPdfToPng_(cfg, pdfBlob);
   } catch (err) {
-    if (cfg.REPORT_REQUIRE_INLINE_CARD_IMAGE) {
+    if (cfg.REPORT_REQUIRE_IMAGE) {
       throw err;
     }
-    console.warn('Inline card image skipped: ' + err.message);
+    console.warn('Report image skipped: ' + err.message);
     return '';
   }
 }
 
 function convertPdfToPng_(cfg, pdfBlob) {
   if (!cfg.PDF_TO_PNG_SERVICE_URL) {
-    if (cfg.REPORT_REQUIRE_INLINE_CARD_IMAGE) {
+    if (cfg.REPORT_REQUIRE_IMAGE) {
       throw new Error('REPORT_SEND_IMAGE is enabled but PDF_TO_PNG_SERVICE_URL is not configured');
     }
     return '';
@@ -358,8 +445,8 @@ function convertPdfToPng_(cfg, pdfBlob) {
   }
 
   if (imageBase64.length > cfg.SEATALK_MAX_BASE64_BYTES) {
-    if (cfg.REPORT_REQUIRE_INLINE_CARD_IMAGE) {
-      throw new Error('Inline card image is ' + imageBase64.length + ' bytes, over limit ' + cfg.SEATALK_MAX_BASE64_BYTES);
+    if (cfg.REPORT_REQUIRE_IMAGE) {
+      throw new Error('Image is ' + imageBase64.length + ' bytes, over limit ' + cfg.SEATALK_MAX_BASE64_BYTES);
     }
     return '';
   }
@@ -390,6 +477,52 @@ function sendInteractive_(cfg, groupId, elements) {
     },
   };
   return postSeatalkJson_(cfg, '/messaging/v2/group_chat', payload);
+}
+
+function titleElement_(text) {
+  return {
+    element_type: 'title',
+    title: {
+      text: text,
+    },
+  };
+}
+
+function descriptionElement_(markdown) {
+  return {
+    element_type: 'description',
+    description: {
+      format: 1,
+      text: markdown,
+    },
+  };
+}
+
+function imageElement_(contentBase64) {
+  return {
+    element_type: 'image',
+    image: {
+      content: contentBase64,
+    },
+  };
+}
+
+function redirectButtonElement_(text, link) {
+  return {
+    element_type: 'button',
+    button: {
+      button_type: 'redirect',
+      text: text,
+      mobile_link: {
+        type: 'web',
+        path: link,
+      },
+      desktop_link: {
+        type: 'web',
+        path: link,
+      },
+    },
+  };
 }
 
 function testPdfToPngServiceHealth() {
@@ -483,7 +616,7 @@ function handleBotAdded_(event) {
       tag: 'text',
       text: {
         format: 1,
-        content: 'SOC5 Otp report bot is connected.',
+        content: cfg.BOT_NAME + ' report bot is connected.',
       },
     },
   });
@@ -524,52 +657,6 @@ function storeGroupId_(cfg, groupId, groupName) {
   } else {
     console.log('Stored SeaTalk group ' + groupId + ' in ' + sheet.getName() + '!' + sheet.getRange(targetRow, column).getA1Notation());
   }
-}
-
-function titleElement_(text) {
-  return {
-    element_type: 'title',
-    title: {
-      text: text,
-    },
-  };
-}
-
-function descriptionElement_(markdown) {
-  return {
-    element_type: 'description',
-    description: {
-      format: 1,
-      text: markdown,
-    },
-  };
-}
-
-function imageElement_(contentBase64) {
-  return {
-    element_type: 'image',
-    image: {
-      content: contentBase64,
-    },
-  };
-}
-
-function redirectButtonElement_(text, link) {
-  return {
-    element_type: 'button',
-    button: {
-      button_type: 'redirect',
-      text: text,
-      mobile_link: {
-        type: 'web',
-        path: link,
-      },
-      desktop_link: {
-        type: 'web',
-        path: link,
-      },
-    },
-  };
 }
 
 function assertOk_(response, label) {

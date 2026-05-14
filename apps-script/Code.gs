@@ -20,7 +20,6 @@ const DEFAULTS = {
   REPORT_SEND_IMAGE: 'true',
   REPORT_INLINE_CARD_IMAGE: 'true',
   REPORT_REQUIRE_INLINE_CARD_IMAGE: 'true',
-  REPORT_SEND_PDF_FILE: 'false',
   REPORT_SHEET_URL: 'https://docs.google.com/spreadsheets/d/1NY4LFE-TmuIVjgW8vb0-j7piQemxxQm7pkN67DJFNhI/edit?gid=1394317266#gid=1394317266',
   PDF_TO_PNG_SERVICE_URL: '',
   PDF_TO_PNG_SERVICE_TOKEN: '',
@@ -46,7 +45,7 @@ function sendIntradayReport() {
     descriptionElement_('FMS Update: ' + fmsUpdate),
   ];
 
-  const pdfBlob = (cfg.REPORT_SEND_IMAGE && cfg.REPORT_INLINE_CARD_IMAGE) || cfg.REPORT_SEND_PDF_FILE
+  const pdfBlob = cfg.REPORT_SEND_IMAGE && cfg.REPORT_INLINE_CARD_IMAGE
     ? exportReportPdf_(spreadsheet, cfg)
     : null;
 
@@ -61,18 +60,41 @@ function sendIntradayReport() {
     elements.push(redirectButtonElement_('View Report Link', cfg.REPORT_SHEET_URL));
   }
 
-  const filename = 'report-' + Utilities.formatDate(now, cfg.TIME_ZONE, 'yyyyMMdd-HHmmss') + '.pdf';
-
-  groupIds.forEach(function(groupId) {
-    sendInteractive_(cfg, groupId, elements);
-    if (pdfBlob) {
-      sendFile_(cfg, groupId, filename, pdfBlob);
-    }
-  });
+  const result = sendToGroups_(cfg, groupIds, elements);
+  if (result.sent === 0) {
+    throw new Error('Report was not sent to any SeaTalk group. ' + result.errors.join(' | '));
+  }
+  if (result.errors.length > 0) {
+    console.warn('Report sent to ' + result.sent + ' group(s), with skipped/failed groups: ' + result.errors.join(' | '));
+  }
 }
 
 function sendReportNow() {
   sendIntradayReport();
+}
+
+function sendToGroups_(cfg, groupIds, elements) {
+  const result = {
+    sent: 0,
+    errors: [],
+  };
+
+  groupIds.forEach(function(groupId) {
+    try {
+      sendInteractive_(cfg, groupId, elements);
+      result.sent++;
+    } catch (err) {
+      if (err.seatalkCode === 7001) {
+        result.errors.push(groupId + ': bot is not a member of this group chat');
+        console.warn('Skipping SeaTalk group ' + groupId + ': bot is not a member of this group chat. Add the bot to the group or remove this group ID from ' + cfg.GOOGLE_GROUP_IDS_RANGE + '.');
+        return;
+      }
+      result.errors.push(groupId + ': ' + err.message);
+      console.error('Failed sending to SeaTalk group ' + groupId + ': ' + err.message);
+    }
+  });
+
+  return result;
 }
 
 function installHourlyTrigger() {
@@ -123,8 +145,7 @@ function loadConfig_() {
   cfg.REPORT_SEND_IMAGE = parseBool_(cfg.REPORT_SEND_IMAGE);
   cfg.REPORT_INLINE_CARD_IMAGE = parseBool_(cfg.REPORT_INLINE_CARD_IMAGE);
   cfg.REPORT_REQUIRE_INLINE_CARD_IMAGE = parseBool_(cfg.REPORT_REQUIRE_INLINE_CARD_IMAGE);
-  cfg.REPORT_SEND_PDF_FILE = parseBool_(cfg.REPORT_SEND_PDF_FILE);
-  cfg.PDF_TO_PNG_SERVICE_URL = cfg.PDF_TO_PNG_SERVICE_URL.replace(/\/+$/, '');
+  cfg.PDF_TO_PNG_SERVICE_URL = normalizeConverterUrl_(cfg.PDF_TO_PNG_SERVICE_URL);
   cfg.BOT_PDF_DPI = Number(cfg.BOT_PDF_DPI);
   cfg.BOT_IMAGE_RESIZE_WIDTH = Number(cfg.BOT_IMAGE_RESIZE_WIDTH);
   cfg.BOT_IMAGE_BORDER_PX = Number(cfg.BOT_IMAGE_BORDER_PX);
@@ -302,23 +323,21 @@ function sendInteractive_(cfg, groupId, elements) {
   return postSeatalkJson_(cfg, '/messaging/v2/group_chat', payload);
 }
 
-function sendFile_(cfg, groupId, filename, blob) {
-  const encoded = Utilities.base64Encode(blob.getBytes());
-  if (encoded.length > cfg.SEATALK_MAX_BASE64_BYTES) {
-    throw new Error('Encoded PDF is ' + encoded.length + ' bytes, over limit ' + cfg.SEATALK_MAX_BASE64_BYTES);
+function testPdfToPngServiceHealth() {
+  const cfg = loadConfig_();
+  if (!cfg.PDF_TO_PNG_SERVICE_URL) {
+    throw new Error('PDF_TO_PNG_SERVICE_URL is not configured');
   }
 
-  const payload = {
-    group_id: groupId,
-    message: {
-      tag: 'file',
-      file: {
-        filename: filename,
-        content: encoded,
-      },
-    },
-  };
-  return postSeatalkJson_(cfg, '/messaging/v2/group_chat', payload);
+  const healthUrl = cfg.PDF_TO_PNG_SERVICE_URL.replace(/\/convert\/pdf-to-png$/, '/healthz');
+  const response = UrlFetchApp.fetch(healthUrl, {
+    method: 'get',
+    muteHttpExceptions: true,
+  });
+
+  assertOk_(response, 'PDF to PNG health check');
+  console.log(response.getContentText());
+  return response.getContentText();
 }
 
 function postSeatalkJson_(cfg, path, payload) {
@@ -335,7 +354,10 @@ function postSeatalkJson_(cfg, path, payload) {
   assertOk_(response, 'SeaTalk API ' + path);
   const decoded = JSON.parse(response.getContentText() || '{}');
   if (decoded.code !== 0) {
-    throw new Error('SeaTalk API code ' + decoded.code + ': ' + response.getContentText());
+    const err = new Error('SeaTalk API code ' + decoded.code + ': ' + response.getContentText());
+    err.seatalkCode = decoded.code;
+    err.seatalkMessage = decoded.message || '';
+    throw err;
   }
   return decoded;
 }
@@ -372,13 +394,16 @@ function seatalkToken_(cfg) {
 
 function handleBotAdded_(event) {
   const cfg = loadConfig_();
-  if (!cfg.SEATALK_WELCOME_ON_ADD) {
+  const group = event.event && event.event.group ? event.event.group : {};
+  const groupId = group.group_id || event.event.group_id || '';
+  if (!groupId) {
     return;
   }
 
-  const group = event.event && event.event.group ? event.event.group : {};
-  const groupId = group.group_id || '';
-  if (!groupId) {
+  const groupName = group.group_name || event.event.group_name || '';
+  storeGroupId_(cfg, groupId, groupName);
+
+  if (!cfg.SEATALK_WELCOME_ON_ADD) {
     return;
   }
 
@@ -393,6 +418,43 @@ function handleBotAdded_(event) {
       },
     },
   });
+}
+
+function storeGroupId_(cfg, groupId, groupName) {
+  const spreadsheet = SpreadsheetApp.openById(cfg.GOOGLE_SPREADSHEET_ID);
+  const range = spreadsheet.getRange(cfg.GOOGLE_GROUP_IDS_RANGE);
+  const values = range.getDisplayValues();
+
+  for (let i = 0; i < values.length; i++) {
+    if (String(values[i][0] || '').trim() === groupId) {
+      console.log('SeaTalk group already exists in ' + cfg.GOOGLE_GROUP_IDS_RANGE + ': ' + groupId);
+      return;
+    }
+  }
+
+  const sheet = range.getSheet();
+  const column = range.getColumn();
+  const startRow = range.getRow();
+  let targetRow = startRow;
+
+  for (let i = 0; i < values.length; i++) {
+    if (!String(values[i][0] || '').trim()) {
+      targetRow = startRow + i;
+      break;
+    }
+    targetRow = startRow + values.length;
+  }
+
+  if (targetRow > sheet.getMaxRows()) {
+    sheet.insertRowsAfter(sheet.getMaxRows(), targetRow - sheet.getMaxRows());
+  }
+
+  sheet.getRange(targetRow, column).setValue(groupId);
+  if (groupName) {
+    console.log('Stored SeaTalk group ' + groupName + ' (' + groupId + ') in ' + sheet.getName() + '!' + sheet.getRange(targetRow, column).getA1Notation());
+  } else {
+    console.log('Stored SeaTalk group ' + groupId + ' in ' + sheet.getName() + '!' + sheet.getRange(targetRow, column).getA1Notation());
+  }
 }
 
 function titleElement_(text) {
@@ -460,4 +522,15 @@ function parseBool_(value) {
 
 function normalizeBase64_(value) {
   return String(value || '').replace(/^data:image\/[a-zA-Z0-9.+-]+;base64,/, '').trim();
+}
+
+function normalizeConverterUrl_(value) {
+  const url = String(value || '').trim().replace(/\/+$/, '');
+  if (!url) {
+    return '';
+  }
+  if (/\/convert\/pdf-to-png$/.test(url)) {
+    return url;
+  }
+  return url + '/convert/pdf-to-png';
 }

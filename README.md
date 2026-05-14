@@ -60,6 +60,8 @@ Put each SeaTalk group ID in `bot_config!A2:A`.
 
 The converter is a Dockerized Go service. It requires Poppler and ImageMagick, both installed by the Dockerfile.
 
+For the full Azure Portal walkthrough, use [AZURE_UI_SETUP.md](./AZURE_UI_SETUP.md).
+
 ### Option A: Azure Portal
 
 1. Create an Azure Container Registry, or use Docker Hub/GitHub Container Registry.
@@ -92,7 +94,7 @@ $IMAGE="$ACR_NAME.azurecr.io/soc5-pdf-to-png:latest"
 $TOKEN="choose-a-long-random-secret"
 ```
 
-Create base Azure resources:
+Create Azure resources:
 
 ```powershell
 az login
@@ -100,12 +102,23 @@ az extension add --name containerapp --upgrade
 az group create --name $RESOURCE_GROUP --location $LOCATION
 az acr create --resource-group $RESOURCE_GROUP --name $ACR_NAME --sku Basic
 az acr update --name $ACR_NAME --admin-enabled true
+$ACR_USERNAME=$(az acr credential show --name $ACR_NAME --query username --output tsv)
+$ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query "passwords[0].value" --output tsv)
 az containerapp env create --name "$APP_NAME-env" --resource-group $RESOURCE_GROUP --location $LOCATION
+az containerapp create `
+  --name $APP_NAME `
+  --resource-group $RESOURCE_GROUP `
+  --environment "$APP_NAME-env" `
+  --image $IMAGE `
+  --target-port 8080 `
+  --ingress external `
+  --registry-server "$ACR_NAME.azurecr.io" `
+  --registry-username $ACR_USERNAME `
+  --registry-password $ACR_PASSWORD `
+  --env-vars PORT=8080 WORK_DIR=/tmp/pdf-to-png-converter PDF_TO_PNG_SERVICE_TOKEN=$TOKEN SEATALK_MAX_BASE64_BYTES=5242880
 ```
 
-Build and push the image before creating the Container App.
-
-If `az acr build` is available in your Azure subscription:
+If `az acr build` is available in your Azure subscription, you can build the image in Azure before creating the container app:
 
 ```powershell
 az acr build --registry $ACR_NAME --image soc5-pdf-to-png:latest .
@@ -151,24 +164,6 @@ Expected:
 
 ```text
 latest
-```
-
-After the `latest` tag exists in ACR, create the Container App:
-
-```powershell
-$ACR_USERNAME=$(az acr credential show --name $ACR_NAME --query username --output tsv)
-$ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query "passwords[0].value" --output tsv)
-az containerapp create `
-  --name $APP_NAME `
-  --resource-group $RESOURCE_GROUP `
-  --environment "$APP_NAME-env" `
-  --image $IMAGE `
-  --target-port 8080 `
-  --ingress external `
-  --registry-server "$ACR_NAME.azurecr.io" `
-  --registry-username $ACR_USERNAME `
-  --registry-password $ACR_PASSWORD `
-  --env-vars PORT=8080 WORK_DIR=/tmp/pdf-to-png-converter PDF_TO_PNG_SERVICE_TOKEN=$TOKEN SEATALK_MAX_BASE64_BYTES=5242880
 ```
 
 Get the converter URL:
@@ -244,9 +239,11 @@ GOOGLE_CAPTURE_RANGE=intraday!C1:AD37
 GOOGLE_FMS_UPDATE_RANGE=intraday!AE2
 GOOGLE_GROUP_IDS_RANGE=bot_config!A2:A
 REPORT_SHEET_URL=https://docs.google.com/spreadsheets/d/1NY4LFE-TmuIVjgW8vb0-j7piQemxxQm7pkN67DJFNhI/edit?gid=1394317266#gid=1394317266
-PDF_TO_PNG_SERVICE_URL=https://<azure-fqdn>/convert/pdf-to-png
+PDF_TO_PNG_SERVICE_URL=https://<application-url>/convert/pdf-to-png
 PDF_TO_PNG_SERVICE_TOKEN=choose-a-long-random-secret
 ```
+
+`PDF_TO_PNG_SERVICE_URL` may also be the base Azure Application URL. Apps Script appends `/convert/pdf-to-png` automatically when needed.
 
 Recommended script properties:
 
@@ -257,7 +254,6 @@ REPORT_TITLE_PREFIX=SOC 5 IntraDay Update as of
 REPORT_SEND_IMAGE=true
 REPORT_INLINE_CARD_IMAGE=true
 REPORT_REQUIRE_INLINE_CARD_IMAGE=true
-REPORT_SEND_PDF_FILE=false
 GOOGLE_EXPORT_LANDSCAPE=true
 BOT_PDF_DPI=220
 BOT_IMAGE_BORDER_PX=20
@@ -299,7 +295,15 @@ That removes existing triggers for `sendIntradayReport` and creates one hourly t
 
 ## 7. Optional SeaTalk Callback
 
-Apps Script includes `doPost(e)` for SeaTalk event verification and optional bot-added handling.
+Apps Script includes `doPost(e)` for SeaTalk event verification and `bot_added_to_group_chat` handling.
+
+When SeaTalk sends `bot_added_to_group_chat`, the script stores the group ID in:
+
+```text
+bot_config!A2:A
+```
+
+Duplicate group IDs are ignored.
 
 Deploy it as a web app:
 
@@ -342,6 +346,10 @@ Set `PDF_TO_PNG_SERVICE_URL` in Apps Script script properties.
 `unauthorized`
 
 The Apps Script `PDF_TO_PNG_SERVICE_TOKEN` does not match the Azure `PDF_TO_PNG_SERVICE_TOKEN`.
+
+`SeaTalk API code 7001`
+
+The bot is not a member of one of the group chats listed in `bot_config!A2:A` or `SEATALK_GROUP_ID`. Add the bot to that SeaTalk group, or remove the group ID from the sheet. The script logs the specific skipped group ID.
 
 `encoded image is over limit`
 

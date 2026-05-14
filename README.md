@@ -297,6 +297,8 @@ That removes existing triggers for `sendIntradayReport` and creates one hourly t
 
 Apps Script includes `doPost(e)` for SeaTalk event verification and `bot_added_to_group_chat` handling.
 
+If you want Render to be the SeaTalk callback URL and only handle SeaTalk events, use [RENDER_CALLBACK_SETUP.md](./RENDER_CALLBACK_SETUP.md).
+
 When SeaTalk sends `bot_added_to_group_chat`, the script stores the group ID in:
 
 ```text

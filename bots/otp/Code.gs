@@ -117,9 +117,7 @@ function doPost(e) {
   const event = JSON.parse(body);
 
   if (event.event_type === 'event_verification') {
-    return jsonResponse_({
-      seatalk_challenge: event.event && event.event.seatalk_challenge ? event.event.seatalk_challenge : '',
-    });
+    return textResponse_(extractChallenge_(event));
   }
 
   if (event.event_type === 'bot_added_to_group_chat') {
@@ -516,6 +514,12 @@ function jsonResponse_(data) {
     .setMimeType(ContentService.MimeType.JSON);
 }
 
+function textResponse_(text) {
+  return ContentService
+    .createTextOutput(String(text || ''))
+    .setMimeType(ContentService.MimeType.TEXT);
+}
+
 function parseBool_(value) {
   return String(value).toLowerCase() === 'true';
 }
@@ -533,4 +537,14 @@ function normalizeConverterUrl_(value) {
     return url;
   }
   return url + '/convert/pdf-to-png';
+}
+
+function extractChallenge_(event) {
+  if (event.event && event.event.seatalk_challenge) {
+    return event.event.seatalk_challenge;
+  }
+  if (event.event && event.event.challenge) {
+    return event.event.challenge;
+  }
+  return event.seatalk_challenge || event.challenge || '';
 }

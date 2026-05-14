@@ -16,6 +16,8 @@ https://soc5-pdf-to-png.<region>.azurecontainerapps.io/convert/pdf-to-png
 
 Use that URL in Apps Script as `PDF_TO_PNG_SERVICE_URL`.
 
+If you already have a working Azure converter for the current Intraday bot, you do not need to rename the live Azure resources. These names are for new `soc5-bots` setups.
+
 ## What Azure Runs
 
 Azure runs only the converter service:
@@ -58,7 +60,7 @@ PDF_TO_PNG_SERVICE_TOKEN=choose-a-long-random-secret
 
 ```text
 Subscription:    your Azure subscription
-Resource group:  soc5-intraday-rg
+Resource group:  soc5-bots-rg
 Region:          Southeast Asia
 ```
 
@@ -73,8 +75,8 @@ Region:          Southeast Asia
 
 ```text
 Subscription:    your Azure subscription
-Resource group:  soc5-intraday-rg
-Registry name:   soc5intradayacr
+Resource group:  soc5-bots-rg
+Registry name:   soc5botsacr
 Location:        Southeast Asia
 Pricing plan:    Basic
 ```
@@ -87,7 +89,7 @@ Pricing plan:    Basic
 
 GitHub Actions needs permission to push the Docker image to Azure Container Registry.
 
-1. Open **Container registries > soc5intradayacr**.
+1. Open **Container registries > soc5botsacr**.
 2. In the left menu, open **Settings > Access keys**.
 3. Set **Admin user** to **Enabled**.
 4. Copy these values:
@@ -101,8 +103,8 @@ password or password2
 Example:
 
 ```text
-Login server: soc5intradayacr.azurecr.io
-Username:     soc5intradayacr
+Login server: soc5botsacr.azurecr.io
+Username:     soc5botsacr
 Password:     <hidden Azure password>
 ```
 
@@ -115,7 +117,7 @@ Password:     <hidden Azure password>
 5. Add these three secrets:
 
 ```text
-ACR_LOGIN_SERVER=soc5intradayacr.azurecr.io
+ACR_LOGIN_SERVER=soc5botsacr.azurecr.io
 ACR_USERNAME=<username from Azure Access keys>
 ACR_PASSWORD=<password from Azure Access keys>
 ```
@@ -134,13 +136,13 @@ Create each secret one at a time.
 The workflow builds this Docker image:
 
 ```text
-soc5intradayacr.azurecr.io/soc5-pdf-to-png:latest
+soc5botsacr.azurecr.io/soc5-pdf-to-png:latest
 ```
 
 ## 6. Confirm The Image Exists In ACR
 
 1. Return to Azure Portal.
-2. Open **Container registries > soc5intradayacr**.
+2. Open **Container registries > soc5botsacr**.
 3. In the left menu, open **Services > Repositories**.
 4. Click:
 
@@ -164,7 +166,7 @@ Do not create the Container App until this tag exists.
 
 ```text
 Subscription:      your Azure subscription
-Resource group:    soc5-intraday-rg
+Resource group:    soc5-bots-rg
 Environment name:  soc5-pdf-to-png-env
 Region:            Southeast Asia
 ```
@@ -181,7 +183,7 @@ Region:            Southeast Asia
 
 ```text
 Subscription:                 your Azure subscription
-Resource group:               soc5-intraday-rg
+Resource group:               soc5-bots-rg
 Container app name:           soc5-pdf-to-png
 Region:                       Southeast Asia
 Container Apps Environment:   soc5-pdf-to-png-env
@@ -197,7 +199,7 @@ On the **Container** tab:
 2. Select:
 
 ```text
-Registry:    soc5intradayacr
+Registry:    soc5botsacr
 Image:       soc5-pdf-to-png
 Image tag:   latest
 ```
@@ -369,7 +371,7 @@ Limitation: Apps Script does not expose inbound request headers to `doPost`, so 
 
 If Azure cannot find the image:
 
-1. Open **Container registries > soc5intradayacr > Services > Repositories**.
+1. Open **Container registries > soc5botsacr > Services > Repositories**.
 2. Confirm:
 
 ```text

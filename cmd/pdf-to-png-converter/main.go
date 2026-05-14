@@ -18,7 +18,7 @@ import (
 	"syscall"
 	"time"
 
-	"soc5-intraday/internal/converter"
+	"soc5-bots/internal/converter"
 )
 
 type config struct {

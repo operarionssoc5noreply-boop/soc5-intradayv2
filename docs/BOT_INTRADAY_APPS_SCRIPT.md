@@ -1,8 +1,8 @@
-# Apps Script
+# Intraday Apps Script
 
 `Code.gs` is the active SeaTalk bot implementation. It reads the Google Sheet, exports the report PDF, calls the Azure converter, and sends the SeaTalk interactive card.
 
-Use the complete setup guide in the repository root [README.md](../README.md).
+Use the shared setup guide in [README.md](./README.md).
 
 Required script properties:
 

@@ -2,6 +2,8 @@
 
 Use this only if you want Render to be the SeaTalk callback URL.
 
+In this multi-bot repo, the callback proxy is shared infrastructure. For multiple bots, deploy one callback service per bot unless you intentionally build custom routing, because each SeaTalk bot has a different signing secret and Apps Script web app URL.
+
 The normal report flow stays the same:
 
 - Apps Script sends SeaTalk reports.
@@ -66,11 +68,21 @@ Who has access: Anyone
 
 Use the Apps Script web app URL as `APPS_SCRIPT_WEB_APP_URL` in Render.
 
+For the Intraday bot, the Apps Script source is:
+
+```text
+bots/intraday/apps-script/
+```
+
 ## Behavior
 
 `event_verification`
 
-Render responds directly to SeaTalk with `seatalk_challenge`.
+Render validates the `Signature` header, then responds directly to SeaTalk with JSON:
+
+```json
+{"seatalk_challenge":"..."}
+```
 
 `bot_added_to_group_chat`
 
@@ -96,6 +108,20 @@ Expected:
 
 ```json
 {"ok":true}
+```
+
+After changing callback code, redeploy the Render service before retrying verification in the SeaTalk developer portal.
+
+If SeaTalk says verification failed because the response is invalid, check Render logs. The proxy should log startup like:
+
+```text
+seatalk callback proxy listening on :10000/bot-callback
+```
+
+Make sure the SeaTalk callback URL points to the callback path, not just the Render base URL:
+
+```text
+https://your-render-service.onrender.com/bot-callback
 ```
 
 ## Notes

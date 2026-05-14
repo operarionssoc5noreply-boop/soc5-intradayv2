@@ -92,6 +92,12 @@ func callback(cfg config) http.HandlerFunc {
 			return
 		}
 
+		var event callbackEnvelope
+		if err := json.Unmarshal(body, &event); err != nil {
+			http.Error(w, "invalid json", http.StatusBadRequest)
+			return
+		}
+
 		signature := r.Header.Get("Signature")
 		if signature == "" {
 			signature = r.Header.Get("signature")
@@ -101,15 +107,13 @@ func callback(cfg config) http.HandlerFunc {
 			return
 		}
 
-		var event callbackEnvelope
-		if err := json.Unmarshal(body, &event); err != nil {
-			http.Error(w, "invalid json", http.StatusBadRequest)
-			return
-		}
-
 		w.Header().Set("Content-Type", "application/json")
 		if event.EventType == "event_verification" {
-			challenge, _ := event.Event["seatalk_challenge"].(string)
+			challenge := extractChallenge(body, event)
+			if challenge == "" {
+				http.Error(w, "missing seatalk_challenge", http.StatusBadRequest)
+				return
+			}
 			_ = json.NewEncoder(w).Encode(map[string]string{"seatalk_challenge": challenge})
 			return
 		}
@@ -124,13 +128,36 @@ func callback(cfg config) http.HandlerFunc {
 	}
 }
 
+func extractChallenge(body []byte, event callbackEnvelope) string {
+	if event.Event != nil {
+		if challenge, _ := event.Event["seatalk_challenge"].(string); challenge != "" {
+			return challenge
+		}
+		if challenge, _ := event.Event["challenge"].(string); challenge != "" {
+			return challenge
+		}
+	}
+
+	var raw map[string]any
+	if err := json.Unmarshal(body, &raw); err != nil {
+		return ""
+	}
+	if challenge, _ := raw["seatalk_challenge"].(string); challenge != "" {
+		return challenge
+	}
+	if challenge, _ := raw["challenge"].(string); challenge != "" {
+		return challenge
+	}
+	return ""
+}
+
 func validSignature(signingSecret string, body []byte, signature string) bool {
 	if signingSecret == "" {
 		return true
 	}
 	sum := sha256.Sum256(append(body, []byte(signingSecret)...))
 	calculated := hex.EncodeToString(sum[:])
-	return subtle.ConstantTimeCompare([]byte(calculated), []byte(signature)) == 1
+	return subtle.ConstantTimeCompare([]byte(calculated), []byte(strings.ToLower(signature))) == 1
 }
 
 func forwardToAppsScript(ctx context.Context, cfg config, body []byte) error {

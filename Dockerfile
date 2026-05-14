@@ -4,7 +4,7 @@ WORKDIR /src
 COPY go.mod ./
 COPY cmd ./cmd
 COPY internal ./internal
-RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/seatalk-bot ./cmd/seatalk-bot
+RUN CGO_ENABLED=0 GOOS=linux go build -trimpath -ldflags="-s -w" -o /out/pdf-to-png-converter ./cmd/pdf-to-png-converter
 
 FROM debian:bookworm-slim
 
@@ -13,11 +13,10 @@ RUN apt-get update \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /app
-COPY --from=build /out/seatalk-bot /app/seatalk-bot
+COPY --from=build /out/pdf-to-png-converter /app/pdf-to-png-converter
 
 ENV PORT=8080 \
-    WORK_DIR=/tmp/seatalk-bot
+    WORK_DIR=/tmp/pdf-to-png-converter
 
 EXPOSE 8080
-ENTRYPOINT ["/app/seatalk-bot"]
-
+ENTRYPOINT ["/app/pdf-to-png-converter"]

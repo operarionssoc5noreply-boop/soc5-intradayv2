@@ -73,6 +73,41 @@ function sendReportNow() {
   sendIntradayReport();
 }
 
+function checkIntradaySetup() {
+  const cfg = loadConfig_();
+  const spreadsheet = SpreadsheetApp.openById(cfg.GOOGLE_SPREADSHEET_ID);
+  const groupIds = readGroupIds_(spreadsheet, cfg);
+  const sendTriggers = ScriptApp.getProjectTriggers()
+    .filter(function(trigger) {
+      return trigger.getHandlerFunction() === 'sendIntradayReport';
+    });
+  const summary = {
+    hourlyTriggerInstalled: sendTriggers.length > 0,
+    sendIntradayReportTriggers: sendTriggers.length,
+    groupIdCount: groupIds.length,
+    pdfToPngConfigured: Boolean(cfg.PDF_TO_PNG_SERVICE_URL),
+    inlineCardImageRequired: cfg.REPORT_SEND_IMAGE && cfg.REPORT_INLINE_CARD_IMAGE && cfg.REPORT_REQUIRE_INLINE_CARD_IMAGE,
+    spreadsheetId: cfg.GOOGLE_SPREADSHEET_ID,
+    captureRange: cfg.GOOGLE_CAPTURE_RANGE,
+    fmsUpdateRange: cfg.GOOGLE_FMS_UPDATE_RANGE,
+    groupIdsRange: cfg.GOOGLE_GROUP_IDS_RANGE,
+  };
+
+  console.log(JSON.stringify(summary, null, 2));
+
+  if (sendTriggers.length === 0) {
+    throw new Error('No hourly trigger found. Run installHourlyTrigger once from the Apps Script editor.');
+  }
+  if (groupIds.length === 0) {
+    throw new Error('No SeaTalk group IDs found in ' + cfg.GOOGLE_GROUP_IDS_RANGE + '. Add a group ID or set SEATALK_GROUP_ID.');
+  }
+  if (summary.inlineCardImageRequired && !cfg.PDF_TO_PNG_SERVICE_URL) {
+    throw new Error('Inline report image is required, but PDF_TO_PNG_SERVICE_URL is not configured.');
+  }
+
+  return summary;
+}
+
 function sendToGroups_(cfg, groupIds, elements) {
   const result = {
     sent: 0,
@@ -108,8 +143,11 @@ function installHourlyTrigger() {
 
   ScriptApp.newTrigger('sendIntradayReport')
     .timeBased()
+    .inTimezone(DEFAULTS.TIME_ZONE)
     .everyHours(1)
     .create();
+
+  console.log('Installed hourly trigger for sendIntradayReport.');
 }
 
 function doPost(e) {

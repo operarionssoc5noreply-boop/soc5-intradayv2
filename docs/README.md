@@ -14,7 +14,7 @@ bots/
       appsscript.json
 
   otp/
-    apps-script/              Created when OTP is implemented
+    Code.gs
 
 cmd/
   pdf-to-png-converter/      Shared Azure Container Apps service
@@ -52,6 +52,17 @@ internal/              Shared Go converter package.
 
 The local `.env` file and real secrets should not be committed. They are intentionally ignored.
 
+## Shared SeaTalk App
+
+All bot workflows use the same SeaTalk app identity:
+
+```text
+SEATALK_APP_ID=<shared-seatalk-app-id>
+SEATALK_APP_SECRET=<shared-seatalk-app-secret>
+```
+
+That means Intraday, OTP, and future workflows send messages as the same SeaTalk bot. Keep separate spreadsheet IDs, report ranges, group ID ranges, report titles, and schedules so each workflow stays independent.
+
 ## Bots
 
 ### Intraday
@@ -76,7 +87,7 @@ Folder:
 bots/otp/
 ```
 
-When the OTP bot is ready, copy the Apps Script structure from `bots/intraday/apps-script/` into `bots/otp/apps-script/`, then change the script properties for the OTP SeaTalk app, spreadsheet, ranges, and group IDs.
+The OTP workflow uses the same SeaTalk app credentials as Intraday, but should have its own spreadsheet, ranges, group IDs, report title, and trigger schedule.
 
 ## Shared Azure Converter
 
@@ -102,19 +113,19 @@ For setup, use [AZURE_UI_SETUP.md](./AZURE_UI_SETUP.md).
 
 Use the callback proxy only if you need SeaTalk callback signature validation.
 
-For multiple bots, the clean setup is one callback service per bot because each SeaTalk bot has its own signing secret and Apps Script web app URL.
+Because all workflows use the same SeaTalk app, SeaTalk normally has one callback URL for that app. Use one callback proxy for the shared app, then forward events to one canonical Apps Script callback handler unless you add routing logic.
 
 For setup, use [RENDER_CALLBACK_SETUP.md](./RENDER_CALLBACK_SETUP.md).
 
 ## Adding A New Bot
 
-1. Create the new SeaTalk bot/app.
-2. Create the new Google Sheet or config range.
-3. Create a new folder under `bots/<bot-name>/`.
-4. Copy `bots/intraday/apps-script/` into the new bot folder.
-5. Create a new Apps Script project and paste that bot's `Code.gs` and `appsscript.json`.
-6. Set that bot's Script Properties.
+1. Create the new Google Sheet or config range.
+2. Create a new folder under `bots/<bot-name>/`.
+3. Copy or adapt an existing Apps Script workflow.
+4. Create a new Apps Script project and paste that bot's `Code.gs` and `appsscript.json` if it has one.
+5. Set that bot's Script Properties.
+6. Use the shared `SEATALK_APP_ID` and `SEATALK_APP_SECRET`.
 7. Reuse the shared Azure converter URL and token.
-8. Run `sendReportNow`, authorize, then run `installHourlyTrigger`.
+8. Run `sendReportNow`, authorize, then install that bot's trigger.
 
 Keep real credentials in Apps Script properties, Azure/Render environment variables, or local ignored files. Do not commit secrets.

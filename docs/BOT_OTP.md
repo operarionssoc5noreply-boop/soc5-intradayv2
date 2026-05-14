@@ -2,16 +2,14 @@
 
 Status: up next.
 
-This folder is reserved for the next SeaTalk bot.
+This folder contains the OTP workflow.
 
-When ready, create:
+Current source:
 
 ```text
-bots/otp/apps-script/
-  Code.gs
-  appsscript.json
+bots/otp/Code.gs
 ```
 
-Use `bots/intraday/apps-script/` as the starting template, then replace the SeaTalk credentials, spreadsheet ID, report ranges, group ID range, and report title values in the OTP Apps Script project properties.
+Use the same shared `SEATALK_APP_ID` and `SEATALK_APP_SECRET` as Intraday. Replace the spreadsheet ID, report ranges, group ID range, report title, and schedule values in the OTP Apps Script project properties.
 
 Put OTP documentation in `docs/BOT_OTP.md`, not inside the bot folder.

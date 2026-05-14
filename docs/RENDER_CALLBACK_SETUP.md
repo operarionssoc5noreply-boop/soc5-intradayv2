@@ -2,7 +2,9 @@
 
 Use this only if you want Render to be the SeaTalk callback URL.
 
-In this multi-bot repo, the callback proxy is shared infrastructure. For multiple bots, deploy one callback service per bot unless you intentionally build custom routing, because each SeaTalk bot has a different signing secret and Apps Script web app URL.
+In this multi-bot repo, the callback proxy is shared infrastructure. Because all workflows use the same SeaTalk app, use the same SeaTalk signing secret for callback validation.
+
+SeaTalk normally has one callback URL per app. If multiple Apps Script workflows need callback events, either forward to one canonical Apps Script callback handler or add routing logic to the proxy.
 
 The normal report flow stays the same:
 
@@ -46,6 +48,8 @@ SEATALK_CALLBACK_PATH=/bot-callback
 SEATALK_SIGNING_SECRET=your-seatalk-signing-secret
 APPS_SCRIPT_WEB_APP_URL=https://script.google.com/macros/s/your-deployment-id/exec
 ```
+
+Use the shared SeaTalk signing secret for `SEATALK_SIGNING_SECRET`.
 
 ## SeaTalk Callback URL
 

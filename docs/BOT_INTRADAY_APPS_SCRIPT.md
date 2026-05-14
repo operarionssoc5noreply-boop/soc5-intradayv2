@@ -18,4 +18,6 @@ PDF_TO_PNG_SERVICE_URL=https://<azure-fqdn>/convert/pdf-to-png
 PDF_TO_PNG_SERVICE_TOKEN=choose-a-long-random-secret
 ```
 
-Run `sendReportNow` for a manual test, then run `installHourlyTrigger` once to schedule hourly sending.
+`SEATALK_APP_ID` and `SEATALK_APP_SECRET` are shared across all workflows in this repo. The Intraday-specific values are the spreadsheet, ranges, report URL, title, and trigger schedule.
+
+Run `testPdfToPngServiceHealth`, then `checkIntradaySetup` to confirm the trigger/config/group IDs. Run `sendReportNow` for a manual test, then run `installHourlyTrigger` once to schedule hourly sending.

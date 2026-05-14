@@ -92,7 +92,7 @@ $IMAGE="$ACR_NAME.azurecr.io/soc5-pdf-to-png:latest"
 $TOKEN="choose-a-long-random-secret"
 ```
 
-Create Azure resources:
+Create base Azure resources:
 
 ```powershell
 az login
@@ -100,12 +100,64 @@ az extension add --name containerapp --upgrade
 az group create --name $RESOURCE_GROUP --location $LOCATION
 az acr create --resource-group $RESOURCE_GROUP --name $ACR_NAME --sku Basic
 az acr update --name $ACR_NAME --admin-enabled true
-az acr login --name $ACR_NAME
-docker build -t $IMAGE .
-docker push $IMAGE
+az containerapp env create --name "$APP_NAME-env" --resource-group $RESOURCE_GROUP --location $LOCATION
+```
+
+Build and push the image before creating the Container App.
+
+If `az acr build` is available in your Azure subscription:
+
+```powershell
+az acr build --registry $ACR_NAME --image soc5-pdf-to-png:latest .
+```
+
+Some Azure for Students subscriptions block ACR Tasks and return `TasksOperationsNotAllowed`. If that happens, use the GitHub Actions build path below instead.
+
+### Build Image Without Local Docker
+
+Use this path if your machine cannot run Docker and Azure blocks `az acr build`.
+
+1. Push this repository to GitHub.
+2. Enable ACR admin credentials:
+
+```powershell
+az acr update --name $ACR_NAME --admin-enabled true
+```
+
+3. Get the ACR credentials:
+
+```powershell
+$ACR_LOGIN_SERVER=$(az acr show --name $ACR_NAME --query loginServer --output tsv)
 $ACR_USERNAME=$(az acr credential show --name $ACR_NAME --query username --output tsv)
 $ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query "passwords[0].value" --output tsv)
-az containerapp env create --name "$APP_NAME-env" --resource-group $RESOURCE_GROUP --location $LOCATION
+```
+
+4. In GitHub, open **Settings > Secrets and variables > Actions > New repository secret** and add:
+
+```text
+ACR_LOGIN_SERVER=soc5intradayacr.azurecr.io
+ACR_USERNAME=<value from $ACR_USERNAME>
+ACR_PASSWORD=<value from $ACR_PASSWORD>
+```
+
+5. Open **Actions > Build Converter Image > Run workflow**.
+6. Confirm the image tag exists:
+
+```powershell
+az acr repository show-tags --name $ACR_NAME --repository soc5-pdf-to-png --output table
+```
+
+Expected:
+
+```text
+latest
+```
+
+After the `latest` tag exists in ACR, create the Container App:
+
+```powershell
+$ACR_USERNAME=$(az acr credential show --name $ACR_NAME --query username --output tsv)
+$ACR_PASSWORD=$(az acr credential show --name $ACR_NAME --query "passwords[0].value" --output tsv)
 az containerapp create `
   --name $APP_NAME `
   --resource-group $RESOURCE_GROUP `
@@ -260,7 +312,7 @@ Limitation: Apps Script web apps do not expose inbound request headers to `doPos
 
 ## 8. Local Converter Test
 
-Build and run locally:
+Local Docker is optional. If Docker Desktop is available, build and run locally:
 
 ```powershell
 docker build -t soc5-pdf-to-png .
@@ -271,6 +323,14 @@ Health check:
 
 ```powershell
 Invoke-RestMethod http://localhost:8080/healthz
+```
+
+If local Docker is not available, use the GitHub Actions workflow in `.github/workflows/build-converter-image.yml`.
+
+If your Azure subscription supports ACR Tasks, Azure's remote ACR build also works:
+
+```powershell
+az acr build --registry $ACR_NAME --image soc5-pdf-to-png:latest .
 ```
 
 ## Troubleshooting

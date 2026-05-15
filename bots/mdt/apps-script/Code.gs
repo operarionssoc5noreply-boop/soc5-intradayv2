@@ -32,6 +32,8 @@ const DEFAULTS = {
   BOT_IMAGE_BORDER_PX: '20',
   SEATALK_MAX_BASE64_BYTES: String(5 * 1024 * 1024),
   WATCH_SNAPSHOT_PROPERTY: 'mdt_watch_range_snapshot',
+  BOT_LOGS_SHEET_NAME: 'bot_logs',
+  BOT_DELAY_GRACE_MINUTES: '5',
 };
 
 function splitList_(value) {
@@ -98,7 +100,7 @@ function sendReportToExtraGroupsNow() {
   }
 
   const elements = buildMdtCardElements_(cfg, spreadsheet);
-  const result = sendToGroups_(cfg, groupIds, elements);
+  const result = sendToGroups_(cfg, spreadsheet, groupIds, elements);
   if (result.sent === 0) {
     throw new Error('MDT test report was not sent to any extra SeaTalk group. ' + result.errors.join(' | '));
   }
@@ -193,7 +195,7 @@ function sendMdtReportWithConfig_(cfg, spreadsheet) {
   }
 
   const elements = buildMdtCardElements_(cfg, spreadsheet);
-  const result = sendToGroups_(cfg, groupIds, elements);
+  const result = sendToGroups_(cfg, spreadsheet, groupIds, elements);
   if (result.sent === 0) {
     throw new Error('MDT report was not sent to any SeaTalk group. ' + result.errors.join(' | '));
   }
@@ -244,7 +246,7 @@ function snapshotRange_(spreadsheet, rangeName) {
   }).join('');
 }
 
-function sendToGroups_(cfg, groupIds, elements) {
+function sendToGroups_(cfg, spreadsheet, groupIds, elements) {
   const result = {
     sent: 0,
     errors: [],
@@ -253,8 +255,22 @@ function sendToGroups_(cfg, groupIds, elements) {
   groupIds.forEach(function(groupId) {
     try {
       sendInteractive_(cfg, groupId, elements);
+      if (typeof logBotSend_ === 'function') {
+        try {
+          logBotSend_(spreadsheet, cfg, groupId);
+        } catch (logErr) {
+          console.warn('Failed writing bot log for ' + groupId + ': ' + logErr.message);
+        }
+      }
       result.sent++;
     } catch (err) {
+      if (typeof logBotFailure_ === 'function') {
+        try {
+          logBotFailure_(spreadsheet, cfg, groupId, err);
+        } catch (logErr) {
+          console.warn('Failed writing bot failure log for ' + groupId + ': ' + logErr.message);
+        }
+      }
       if (err.seatalkCode === 7001) {
         result.errors.push(groupId + ': bot is not a member of this group chat');
         console.warn('Skipping SeaTalk group ' + groupId + ': bot is not a member of this group chat. Add the bot to the group or remove this group ID from ' + cfg.GOOGLE_GROUP_IDS_RANGE + '.');

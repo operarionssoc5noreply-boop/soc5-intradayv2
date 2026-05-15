@@ -24,9 +24,9 @@ Card 2 description: same description text as card 1
 Schedule:
 
 ```text
-Hourly, near minute :02
+Hourly, near minute :00
 ```
 
-Apps Script time triggers are approximate, so `nearMinute(2)` asks Apps Script to run close to `:02`, not exactly on the second.
+Apps Script time triggers are approximate, so `nearMinute(0)` asks Apps Script to run close to `:00`, not exactly on the second. The card title timestamp is rounded down to the exact hour, so a run at 10:07 displays `10:00 AM`.
 
 Put OTP documentation in `docs/BOT_OTP.md`, not inside the bot folder.

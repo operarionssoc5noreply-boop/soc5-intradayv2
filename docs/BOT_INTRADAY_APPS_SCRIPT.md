@@ -20,4 +20,6 @@ PDF_TO_PNG_SERVICE_TOKEN=choose-a-long-random-secret
 
 `SEATALK_APP_ID` and `SEATALK_APP_SECRET` are shared across all workflows in this repo. The Intraday-specific values are the spreadsheet, ranges, report URL, title, and trigger schedule.
 
-Run `testPdfToPngServiceHealth`, then `checkIntradaySetup` to confirm the trigger/config/group IDs. Run `sendReportNow` for a manual test, then run `installHourlyTrigger` once to schedule hourly sending.
+Run `testPdfToPngServiceHealth`, then `checkIntradaySetup` to confirm the trigger/config/group IDs. Run `sendReportNow` for a manual test, then run `installHourlyTrigger` once to schedule hourly sending near minute `:00`.
+
+Apps Script time triggers are approximate, so the bot may execute a few minutes away from the hour. The card title timestamp is rounded down to the exact hour, so a run at 10:07 displays `10:00 AM`.

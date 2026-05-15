@@ -6,6 +6,7 @@
  */
 
 const DEFAULTS = {
+  BOT_NAME: 'SOC5-Intraday',
   TIME_ZONE: 'Asia/Manila',
   SEATALK_API_BASE: 'https://openapi.seatalk.io',
   SEATALK_GROUP_ID: '',
@@ -17,6 +18,7 @@ const DEFAULTS = {
   GOOGLE_SHEET_GID: '',
   GOOGLE_EXPORT_LANDSCAPE: 'true',
   REPORT_TITLE_PREFIX: 'SOC 5 IntraDay Update as of',
+  REPORT_TIMESTAMP_FORMAT: 'h:mm a MMM-dd',
   REPORT_SEND_IMAGE: 'true',
   REPORT_INLINE_CARD_IMAGE: 'true',
   REPORT_REQUIRE_INLINE_CARD_IMAGE: 'true',
@@ -27,6 +29,9 @@ const DEFAULTS = {
   BOT_IMAGE_RESIZE_WIDTH: '2200',
   BOT_IMAGE_BORDER_PX: '20',
   SEATALK_MAX_BASE64_BYTES: String(5 * 1024 * 1024),
+  BOT_LOGS_SHEET_NAME: 'bot_logs',
+  BOT_EXPECTED_SEND_INTERVAL_MINUTES: '60',
+  BOT_DELAY_GRACE_MINUTES: '10',
 };
 
 function sendIntradayReport() {
@@ -38,10 +43,10 @@ function sendIntradayReport() {
     throw new Error('No SeaTalk group IDs found in ' + cfg.GOOGLE_GROUP_IDS_RANGE);
   }
 
-  const fmsUpdate = firstCell_(spreadsheet.getRange(cfg.GOOGLE_FMS_UPDATE_RANGE).getDisplayValues());
-  const now = new Date();
+  const fmsUpdate = readRangeDisplayValue_(spreadsheet, cfg.GOOGLE_FMS_UPDATE_RANGE);
+  const timestamp = formatHourlyReportTimestamp_(cfg, new Date());
   const elements = [
-    titleElement_(cfg.REPORT_TITLE_PREFIX + ' ' + Utilities.formatDate(now, cfg.TIME_ZONE, 'h:mm a MMM-dd')),
+    titleElement_(cfg.REPORT_TITLE_PREFIX + ' ' + timestamp),
     descriptionElement_('FMS Update: ' + fmsUpdate),
   ];
 
@@ -60,7 +65,7 @@ function sendIntradayReport() {
     elements.push(redirectButtonElement_('View Report Link', cfg.REPORT_SHEET_URL));
   }
 
-  const result = sendToGroups_(cfg, groupIds, elements);
+  const result = sendToGroups_(cfg, spreadsheet, groupIds, elements);
   if (result.sent === 0) {
     throw new Error('Report was not sent to any SeaTalk group. ' + result.errors.join(' | '));
   }
@@ -108,7 +113,7 @@ function checkIntradaySetup() {
   return summary;
 }
 
-function sendToGroups_(cfg, groupIds, elements) {
+function sendToGroups_(cfg, spreadsheet, groupIds, elements) {
   const result = {
     sent: 0,
     errors: [],
@@ -117,8 +122,22 @@ function sendToGroups_(cfg, groupIds, elements) {
   groupIds.forEach(function(groupId) {
     try {
       sendInteractive_(cfg, groupId, elements);
+      if (typeof logBotSend_ === 'function') {
+        try {
+          logBotSend_(spreadsheet, cfg, groupId);
+        } catch (logErr) {
+          console.warn('Failed writing bot log for ' + groupId + ': ' + logErr.message);
+        }
+      }
       result.sent++;
     } catch (err) {
+      if (typeof logBotFailure_ === 'function') {
+        try {
+          logBotFailure_(spreadsheet, cfg, groupId, err);
+        } catch (logErr) {
+          console.warn('Failed writing bot failure log for ' + groupId + ': ' + logErr.message);
+        }
+      }
       if (err.seatalkCode === 7001) {
         result.errors.push(groupId + ': bot is not a member of this group chat');
         console.warn('Skipping SeaTalk group ' + groupId + ': bot is not a member of this group chat. Add the bot to the group or remove this group ID from ' + cfg.GOOGLE_GROUP_IDS_RANGE + '.');
@@ -145,9 +164,10 @@ function installHourlyTrigger() {
     .timeBased()
     .inTimezone(DEFAULTS.TIME_ZONE)
     .everyHours(1)
+    .nearMinute(0)
     .create();
 
-  console.log('Installed hourly trigger for sendIntradayReport.');
+  console.log('Installed hourly trigger for sendIntradayReport near minute :00.');
 }
 
 function doPost(e) {
@@ -233,6 +253,16 @@ function firstCell_(values) {
     }
   }
   return '';
+}
+
+function readRangeDisplayValue_(spreadsheet, rangeName) {
+  return String(spreadsheet.getRange(rangeName).getDisplayValue() || '').trim();
+}
+
+function formatHourlyReportTimestamp_(cfg, date) {
+  const reportDate = new Date(date.getTime());
+  reportDate.setMinutes(0, 0, 0);
+  return Utilities.formatDate(reportDate, cfg.TIME_ZONE, cfg.REPORT_TIMESTAMP_FORMAT);
 }
 
 function exportReportPdf_(spreadsheet, cfg) {

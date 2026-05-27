@@ -89,6 +89,8 @@ SINCE 24 hours ago
 
 ## Dashboard Queries
 
+For a single dashboard containing all bot logs and monitoring widgets, use [NEW_RELIC_PER_BOT_DASHBOARD.md](./NEW_RELIC_PER_BOT_DASHBOARD.md).
+
 Latest bot events:
 
 ```sql

@@ -255,6 +255,9 @@ function sendToGroups_(cfg, spreadsheet, groupIds, elements) {
   groupIds.forEach(function(groupId) {
     try {
       sendInteractive_(cfg, groupId, elements);
+      if (typeof sendMdtFailedClusterFollowup_ === 'function') {
+        sendMdtFailedClusterFollowup_(cfg, spreadsheet, groupId);
+      }
       if (typeof logBotSend_ === 'function') {
         try {
           logBotSend_(spreadsheet, cfg, groupId);

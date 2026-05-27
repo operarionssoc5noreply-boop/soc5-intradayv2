@@ -25,17 +25,15 @@ SOC 5 Workstation Compliance as of 11:25 AM May-15
 Card description:
 
 ```text
-<blank line>
-<ws-server!A1>
+**<ws-server!A1> Workstation** **NON-COMPLIANCE**
+-
 <ws-server!T1>
 ```
 
 If `ws-server!T1` is empty or returns a spreadsheet error such as `#N/A`, the description is:
 
 ```text
-<blank line>
-<ws-server!A1>
-**COMPLIANT**
+**<ws-server!A1> Workstation** **100% COMPLIANCE**
 ```
 
 Card image capture range:

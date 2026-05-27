@@ -31,6 +31,21 @@ bots/
       Code.gs
       appsscript.json
 
+  backlogs/
+    apps-script/
+      Code.gs
+      appsscript.json
+
+  onqueu-unloading-alert/
+    apps-script/
+      Code.gs
+      appsscript.json
+
+  enroute-alert/
+    apps-script/
+      Code.gs
+      appsscript.json
+
 cmd/
   pdf-to-png-converter/      Shared Azure Container Apps service
   seatalk-callback-proxy/    Optional callback proxy for SeaTalk events
@@ -47,6 +62,7 @@ docs/
   AZURE_UI_SETUP.md           Azure setup guide
   RENDER_CALLBACK_SETUP.md    Optional Render callback guide
   NEW_RELIC_SETUP.md          New Relic monitoring setup
+  NEW_RELIC_PER_BOT_DASHBOARD.md Single New Relic dashboard layout for all bots
   BOT_SEATALK_FREQUENCY.md    SeaTalk bot send frequency reference
   BOT_INTRADAY.md             Intraday bot notes
   BOT_INTRADAY_APPS_SCRIPT.md Intraday Apps Script notes
@@ -54,6 +70,9 @@ docs/
   BOT_MDT.md                  MDT-SOC5 bot notes
   BOT_WORKSTATION.md          soc5-workstation bot notes
   BOT_CONTROL_TOWER.md        soc5-control-tower bot notes
+  BOT_BACKLOGS.md             backlogs bot notes
+  BOT_ONQUEU_UNLOADING_ALERT.md onqueu-unloading_alert bot notes
+  BOT_ENROUTE_ALERT.md        enroute-alert bot notes
 ```
 
 ## Root Files To Keep
@@ -159,6 +178,42 @@ bots/control-tower/apps-script/
 ```
 
 This bot sends every three hours daily. Each run sends one SeaTalk interactive message card with the title `SOC 5 OTP Update as of <time/date now>`, the description value from `Internal_kpi!E1`, one image rendered from `Internal_kpi!G1:Y39`, and a `View Report Link` button. The configured watch range is `Internal_kpi!S15:U30`.
+
+### backlogs
+
+Status: ready.
+
+Source:
+
+```text
+bots/backlogs/apps-script/
+```
+
+This bot watches `backlogs!E8` by five-minute polling. When the watched value changes, it waits 15 seconds, then sends SeaTalk text and image messages. Groups in `bot_config!A2:A`, plus `Njk3MDE2ODY2Mzc2` and `NDk4ODM1MTY4OTY3`, receive the default text plus both images. `NTQ1OTU4MzEzMzM0` receives the default text plus image 1. `OTY2NjY4OTMzNzY4` receives the SOL IIS text plus image 2. It does not use a SeaTalk interactive message card.
+
+### onqueu-unloading_alert
+
+Status: ready.
+
+Source:
+
+```text
+bots/onqueu-unloading-alert/apps-script/
+```
+
+This bot sends every 10 minutes to `NTg3MzEyNjUxMjE2` only. Each run sends SeaTalk text with `at_all: true`, values from `bot_server!A16` and `bot_server!A26`, then one image rendered from `bot_server!B2:M30`. It does not use a SeaTalk interactive message card.
+
+### enroute-alert
+
+Status: ready.
+
+Source:
+
+```text
+bots/enroute-alert/apps-script/
+```
+
+This bot watches `Summary Sheet (In progress)!AE6` by five-minute polling. When the watched value changes and is not `0`, it waits 7 seconds, then sends SeaTalk text and one normal image message rendered from `Summary Sheet (In progress)!C2:V62` to groups in `bot_config!A2:A`. It does not use a SeaTalk interactive message card.
 
 ## Shared Azure Converter
 

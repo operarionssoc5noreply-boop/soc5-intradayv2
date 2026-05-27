@@ -43,7 +43,16 @@ func PDFToPNG(ctx context.Context, pdfPath, pngPath string, dpi, maxWidth, borde
 	if maxWidth > 0 {
 		args = append(args, "-resize", fmt.Sprintf("%dx>", maxWidth))
 	}
-	args = append(args, "-background", "white", "-alpha", "remove", "-alpha", "off", "-append", "-fuzz", "1%", "-trim", "+repage")
+	args = append(
+		args,
+		"-background", "white",
+		"-alpha", "remove",
+		"-alpha", "off",
+		"-fuzz", "1%",
+		"-trim", "+repage",
+		"-append",
+		"-trim", "+repage",
+	)
 	if borderPX > 0 {
 		margin := fmt.Sprintf("%dx%d", borderPX, borderPX)
 		args = append(args, "-bordercolor", "white", "-border", margin)

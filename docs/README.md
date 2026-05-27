@@ -46,6 +46,11 @@ bots/
       Code.gs
       appsscript.json
 
+  soc5-kpi/
+    apps-script/
+      Code.gs
+      appsscript.json
+
 cmd/
   pdf-to-png-converter/      Shared Azure Container Apps service
   seatalk-callback-proxy/    Optional callback proxy for SeaTalk events
@@ -73,6 +78,7 @@ docs/
   BOT_BACKLOGS.md             backlogs bot notes
   BOT_ONQUEU_UNLOADING_ALERT.md onqueu-unloading_alert bot notes
   BOT_ENROUTE_ALERT.md        enroute-alert bot notes
+  BOT_SOC5_KPI.md             SOC5-KPI bot notes
 ```
 
 ## Root Files To Keep
@@ -214,6 +220,18 @@ bots/enroute-alert/apps-script/
 ```
 
 This bot watches `Summary Sheet (In progress)!AE6` by five-minute polling. When the watched value changes and is not `0`, it waits 7 seconds, then sends SeaTalk text and one normal image message rendered from `Summary Sheet (In progress)!C2:V62` to groups in `bot_config!A2:A`. It does not use a SeaTalk interactive message card.
+
+### SOC5-KPI
+
+Status: ready.
+
+Source:
+
+```text
+bots/soc5-kpi/apps-script/
+```
+
+This bot sends daily at 7:00 AM, 12:00 NN, 7:00 PM, and 12:00 MN in `Asia/Manila`. Each run sends one SeaTalk interactive message card with the title `SOC5 KPI Update as of <time/date now>`, the description value from `Internal_kpi!E1`, one image rendered from `Internal_kpi!G1:Y39`, and a `View Report Link` button.
 
 ## Shared Azure Converter
 

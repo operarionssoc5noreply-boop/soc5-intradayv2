@@ -15,6 +15,7 @@ Use these exact `bot_name` values in dashboard filters:
 | Control Tower | `soc5-control-tower` | Every 180 minutes |
 | Backlogs | `backlogs` | Change-based after 5-minute polling |
 | Enroute Alert | `enroute-alert` | Change-based after 5-minute polling |
+| KPI | `SOC5-KPI` | Daily at 7AM, 12NN, 7PM, and 12MN |
 
 ## Dashboard
 
@@ -145,5 +146,18 @@ FACET bot_name
 ```
 
 Set the three-hour alert window to 4 hours and alert when the count is below 1.
+
+Missing scheduled success alert for SOC5-KPI:
+
+```sql
+FROM Log
+SELECT count(*)
+WHERE service = 'soc5-bots'
+  AND bot_name = 'SOC5-KPI'
+  AND status = 'success'
+FACET bot_name
+```
+
+Use alert windows that match the scheduled gaps: about 6 hours after the 7AM and 7PM sends, and about 8 hours after the 12NN and 12MN sends.
 
 Do not use a missing-success alert for `MDT-SOC5`, `backlogs`, or `enroute-alert` unless you define a business-specific heartbeat. These bots are change-based and may correctly have no sends when the watched range does not change.

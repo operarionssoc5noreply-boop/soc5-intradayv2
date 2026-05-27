@@ -14,6 +14,7 @@ Apps Script time triggers are approximate. `nearMinute(0)` asks Apps Script to r
 | backlogs | Polls every 5 minutes | `installPollingTrigger()` -> `pollBacklogsWatchRange` | Only when `backlogs!E8` changes, after a 15-second settle delay | Not fixed; change-based |
 | onqueu-unloading_alert | Every 10 minutes | `installTenMinuteTrigger()` -> `sendOnqueueUnloadingAlert` | Every scheduled ten-minute run | `10` minutes |
 | enroute-alert | Polls every 5 minutes | `installPollingTrigger()` -> `pollEnrouteAlertWatchRange` | Only when `Summary Sheet (In progress)!AE6` changes to a non-zero value, after a 7-second settle delay | Not fixed; change-based |
+| SOC5-KPI | Daily at 7:00 AM, 12:00 NN, 7:00 PM, and 12:00 MN | `installScheduledSendTriggers()` -> `sendKpiReport` | Every scheduled daily run | Not fixed; alternates 5-hour and 7-hour gaps |
 
 ## Details
 
@@ -116,6 +117,22 @@ Each run sends one text message with `at_all: true`, followed by one image messa
 ```
 
 The enroute-alert bot checks `Summary Sheet (In progress)!AE6` every five minutes and sends only when the watched value changes after the initial snapshot has been created. A changed value waits 7 seconds before the text and image messages are built. If the watched value is `0`, no message is sent.
+
+### SOC5-KPI
+
+- Source: `bots/soc5-kpi/apps-script/Code.gs`
+- Schedule installer: `installScheduledSendTriggers()`
+- Trigger target: `sendKpiReport`
+- Apps Script schedule:
+
+```javascript
+.atHour(7).nearMinute(0).everyDays(1)
+.atHour(12).nearMinute(0).everyDays(1)
+.atHour(19).nearMinute(0).everyDays(1)
+.atHour(0).nearMinute(0).everyDays(1)
+```
+
+The KPI bot sends at 7:00 AM, 12:00 NN, 7:00 PM, and 12:00 MN in `Asia/Manila`. Apps Script time triggers are approximate, so each run can happen a few minutes before or after the requested time.
 
 ## Manual Sends
 

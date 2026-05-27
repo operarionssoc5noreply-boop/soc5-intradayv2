@@ -1,6 +1,8 @@
 # AWS UI Setup Guide
 
-This guide deploys the PDF-to-PNG converter using **AWS Console + Amazon ECR + AWS App Runner + GitHub Actions**.
+This guide deploys the PDF-to-PNG converter using **AWS Console + Amazon ECR + GitHub Actions**.
+
+The default AWS path uses **AWS App Runner**. If you do not want App Runner, use the **AWS Lambda Function URL** alternative in this guide.
 
 Use this path when:
 
@@ -9,10 +11,16 @@ Use this path when:
 - You want GitHub Actions to build and push the Docker image.
 - You want a public HTTPS URL that Apps Script can call.
 
-The result is an App Runner URL like:
+The App Runner result is a URL like:
 
 ```text
 https://<app-runner-service-id>.<region>.awsapprunner.com/convert/pdf-to-png
+```
+
+The Lambda result is a URL like:
+
+```text
+https://<lambda-url-id>.lambda-url.<region>.on.aws/convert/pdf-to-png
 ```
 
 Use that URL in Apps Script as `PDF_TO_PNG_SERVICE_URL`.
@@ -44,14 +52,20 @@ This setup uses:
 Amazon ECR        Stores the Docker image
 GitHub Actions    Builds and pushes the image to ECR
 AWS App Runner    Runs the converter container and exposes HTTPS
+AWS Lambda        Optional App Runner alternative
+Function URL      Optional public HTTPS URL for Lambda
 AWS IAM           Grants GitHub and App Runner the required permissions
 ```
 
 App Runner is the simplest AWS console path for this converter because it can run a web container directly from ECR and provide a managed HTTPS URL without an extra load balancer.
 
+Lambda Function URL is the lower-idle-cost alternative because it can scale to zero. Use it when your exported PDF request and converted PNG response both stay below Lambda's normal synchronous payload limits.
+
 ## Cost Notes Before You Start
 
 App Runner is usually not as free-tier-friendly as scale-to-zero services. It can keep provisioned capacity available even when the converter is idle.
+
+Lambda Function URL is usually better for low traffic because it starts only when called. The tradeoff is payload size: keep the PDF request body and JSON response under Lambda's synchronous request/response limits. The converter's default `SEATALK_MAX_BASE64_BYTES=5242880` is intended to keep the JSON image response under that limit.
 
 Before deploying:
 
@@ -59,6 +73,7 @@ Before deploying:
 2. Create a small monthly budget.
 3. Add email alerts.
 4. Delete or pause unused App Runner services after testing.
+5. Delete unused Lambda functions or old ECR images after testing.
 
 Suggested starting settings:
 
@@ -74,14 +89,14 @@ If conversion fails because of memory, increase memory to the next available siz
 
 - An AWS account.
 - A GitHub repository containing this project.
-- Permission to create ECR repositories, IAM users/policies, IAM roles, and App Runner services.
+- Permission to create ECR repositories, IAM users/policies, IAM roles, App Runner services, and Lambda functions.
 - The workflow file in this repo:
 
 ```text
 .github/workflows/build-converter-image-aws.yml
 ```
 
-- A shared secret/token for Apps Script and App Runner, for example:
+- A shared secret/token for Apps Script and the AWS runtime, for example:
 
 ```text
 PDF_TO_PNG_SERVICE_TOKEN=choose-a-long-random-secret
@@ -93,7 +108,7 @@ Recommended region:
 ap-southeast-1
 ```
 
-Use another region if it is closer to your users or required by your organization. Use the same region for ECR, GitHub Actions, and App Runner.
+Use another region if it is closer to your users or required by your organization. Use the same region for ECR, GitHub Actions, App Runner, and Lambda.
 
 ## 1. Create An ECR Repository
 
@@ -244,6 +259,12 @@ The workflow builds this Docker image:
 <aws-account-id>.dkr.ecr.ap-southeast-1.amazonaws.com/soc5-pdf-to-png:latest
 ```
 
+It also builds the Lambda-compatible image:
+
+```text
+<aws-account-id>.dkr.ecr.ap-southeast-1.amazonaws.com/soc5-pdf-to-png:lambda-latest
+```
+
 ## 6. Confirm The Image Exists In ECR
 
 1. Return to AWS Console.
@@ -258,9 +279,12 @@ soc5-pdf-to-png
 
 ```text
 latest
+lambda-latest
 ```
 
-Do not create the App Runner service until this tag exists.
+Use `latest` for App Runner. Use `lambda-latest` for the Lambda Function URL alternative.
+
+Do not create the App Runner service or Lambda function until the required tag exists.
 
 ## 7. Create The App Runner Service
 
@@ -439,6 +463,266 @@ sendReportNow
 5. Check SeaTalk.
 
 The SeaTalk message should include the rendered report image.
+
+## Alternative: Lambda Function URL Without App Runner
+
+Use this path if you do not want App Runner and your reports are small enough for Lambda's synchronous request and response limits.
+
+This alternative uses:
+
+```text
+Amazon ECR              Stores the Lambda-compatible Docker image
+Dockerfile.lambda       Adds AWS Lambda Web Adapter to the converter image
+AWS Lambda              Runs the converter only when called
+Lambda Function URL     Exposes the public HTTPS URL
+```
+
+Important limits:
+
+```text
+Request payload:   PDF JSON request must fit Lambda synchronous invoke limits
+Response payload:  JSON response must fit Lambda synchronous invoke limits
+Timeout:           Maximum Lambda timeout is 15 minutes
+```
+
+For normal bot screenshots, this should work. If Apps Script sends a very large PDF or the rendered PNG exceeds the response limit, use App Runner or ECS Fargate instead.
+
+### 1. Build The Lambda Image
+
+Follow sections 1 through 6 above first:
+
+```text
+Create ECR repository
+Create IAM policy and user
+Add GitHub secrets
+Run GitHub Actions: Build Converter Image AWS
+Confirm ECR tag: lambda-latest
+```
+
+The Lambda image is built from:
+
+```text
+Dockerfile.lambda
+```
+
+The full image URI should look like:
+
+```text
+<aws-account-id>.dkr.ecr.ap-southeast-1.amazonaws.com/soc5-pdf-to-png:lambda-latest
+```
+
+### 2. Create The Lambda Function
+
+1. Search for **Lambda** in AWS Console.
+2. Click **Create function**.
+3. Choose:
+
+```text
+Container image
+```
+
+4. Fill in:
+
+```text
+Function name:  soc5-pdf-to-png
+Container image URI: <aws-account-id>.dkr.ecr.ap-southeast-1.amazonaws.com/soc5-pdf-to-png:lambda-latest
+Architecture:   x86_64
+```
+
+5. For permissions, choose **Create a new role with basic Lambda permissions**.
+6. Click **Create function**.
+
+### 3. Configure Lambda Memory And Timeout
+
+Open **Configuration > General configuration > Edit** and set:
+
+```text
+Memory:   1024 MB
+Timeout:  120 seconds
+```
+
+If conversion is slow or fails with memory errors, increase:
+
+```text
+Memory:   2048 MB
+Timeout:  180 seconds
+```
+
+Leave ephemeral storage at the default `512 MB` unless the temporary PDF or PNG files become large.
+
+### 4. Add Lambda Environment Variables
+
+Open **Configuration > Environment variables > Edit** and add:
+
+```text
+PORT=8080
+WORK_DIR=/tmp/pdf-to-png-converter
+PDF_TO_PNG_SERVICE_TOKEN=choose-a-long-random-secret
+SEATALK_MAX_BASE64_BYTES=5242880
+AWS_LWA_READINESS_CHECK_PATH=/healthz
+```
+
+Important: use the exact same `PDF_TO_PNG_SERVICE_TOKEN` later in Apps Script.
+
+`AWS_LWA_READINESS_CHECK_PATH` tells Lambda Web Adapter to wait for the converter's `/healthz` endpoint before forwarding requests.
+
+### 5. Create The Function URL
+
+1. Open **Configuration > Function URL**.
+2. Click **Create function URL**.
+3. Fill in:
+
+```text
+Auth type:    NONE
+Invoke mode:  BUFFERED
+```
+
+4. Leave CORS disabled. Apps Script does not need browser CORS.
+5. Click **Save**.
+6. Copy the function URL.
+
+It looks like:
+
+```text
+https://abc123.lambda-url.ap-southeast-1.on.aws
+```
+
+The converter endpoint is:
+
+```text
+https://abc123.lambda-url.ap-southeast-1.on.aws/convert/pdf-to-png
+```
+
+The health endpoint is:
+
+```text
+https://abc123.lambda-url.ap-southeast-1.on.aws/healthz
+```
+
+### 6. Test The Lambda Health Endpoint
+
+Open this in your browser:
+
+```text
+https://<lambda-function-url>/healthz
+```
+
+Expected response:
+
+```json
+{"ok":true}
+```
+
+If the first request is slow, that is a Lambda cold start. The container includes Poppler and ImageMagick, so cold starts may take longer than a small Lambda function.
+
+### 7. Configure Apps Script For Lambda
+
+In Apps Script, open **Project Settings > Script properties** and set:
+
+```text
+PDF_TO_PNG_SERVICE_URL=https://<lambda-function-url>/convert/pdf-to-png
+PDF_TO_PNG_SERVICE_TOKEN=choose-a-long-random-secret
+```
+
+The token must match Lambda exactly.
+
+Also confirm image sending is enabled for the bot:
+
+```text
+REPORT_SEND_IMAGE=true
+REPORT_INLINE_CARD_IMAGE=true
+REPORT_REQUIRE_INLINE_CARD_IMAGE=true
+```
+
+Some bot folders use this property instead:
+
+```text
+REPORT_REQUIRE_IMAGE=true
+```
+
+Use the property names already present in that bot's `Code.gs`.
+
+### 8. Run A Manual Apps Script Test
+
+1. Open Apps Script.
+2. First select and run:
+
+```text
+testPdfToPngServiceHealth
+```
+
+3. Then select the bot's manual send function, usually:
+
+```text
+sendReportNow
+```
+
+4. Click **Run**.
+5. Check SeaTalk.
+
+The SeaTalk message should include the rendered report image.
+
+### Lambda Troubleshooting
+
+#### Lambda Function URL Returns 403
+
+The Function URL probably requires IAM authentication.
+
+Fix:
+
+1. Open **Lambda > soc5-pdf-to-png > Configuration > Function URL**.
+2. Set:
+
+```text
+Auth type: NONE
+```
+
+Apps Script cannot sign AWS IAM requests.
+
+#### Lambda Health Endpoint Does Not Load
+
+Open:
+
+```text
+Lambda > soc5-pdf-to-png > Monitor > CloudWatch logs
+```
+
+Expected startup log:
+
+```text
+pdf-to-png converter listening on :8080
+```
+
+Also confirm:
+
+```text
+PORT=8080
+AWS_LWA_READINESS_CHECK_PATH=/healthz
+Image tag: lambda-latest
+```
+
+#### Lambda Returns Payload Too Large
+
+The PDF request or PNG JSON response is too large for Lambda Function URL buffered mode.
+
+Try lowering image size in the bot request if that bot supports it, or reduce:
+
+```text
+SEATALK_MAX_BASE64_BYTES=4000000
+```
+
+If the report still fails, use App Runner or ECS Fargate because those services are a better fit for larger HTTP payloads.
+
+#### Lambda Times Out
+
+Increase:
+
+```text
+Timeout: 180 seconds
+Memory:  2048 MB
+```
+
+More Lambda memory also provides more CPU, which can speed up Poppler and ImageMagick.
 
 ## Updating The Converter
 
@@ -632,5 +916,9 @@ Delete unused ECR images if you rebuild often.
 - AWS App Runner services from Amazon ECR: <https://docs.aws.amazon.com/apprunner/latest/dg/service-source-image.html>
 - AWS App Runner environment variables: <https://docs.aws.amazon.com/apprunner/latest/dg/env-variable.html>
 - AWS App Runner health checks: <https://docs.aws.amazon.com/apprunner/latest/dg/manage-configure-healthcheck.html>
+- AWS Lambda container images: <https://docs.aws.amazon.com/lambda/latest/dg/images-create.html>
+- AWS Lambda Function URLs: <https://docs.aws.amazon.com/lambda/latest/dg/urls-invocation.html>
+- AWS Lambda quotas: <https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html>
+- AWS Lambda Web Adapter: <https://aws.github.io/aws-lambda-web-adapter/>
 - Amazon ECR private repositories: <https://docs.aws.amazon.com/AmazonECR/latest/userguide/Repositories.html>
 - Amazon ECR IAM examples: <https://docs.aws.amazon.com/AmazonECR/latest/userguide/security_iam_id-based-policy-examples.html>

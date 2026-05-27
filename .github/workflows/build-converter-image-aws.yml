@@ -7,6 +7,7 @@ on:
       - main
     paths:
       - Dockerfile
+      - Dockerfile.lambda
       - go.mod
       - cmd/pdf-to-png-converter/**
       - internal/converter/**
@@ -43,5 +44,15 @@ jobs:
 
       - name: Push image
         run: docker push "$REGISTRY/$ECR_REPOSITORY:latest"
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+
+      - name: Build Lambda image
+        run: docker build -f Dockerfile.lambda -t "$REGISTRY/$ECR_REPOSITORY:lambda-latest" .
+        env:
+          REGISTRY: ${{ steps.login-ecr.outputs.registry }}
+
+      - name: Push Lambda image
+        run: docker push "$REGISTRY/$ECR_REPOSITORY:lambda-latest"
         env:
           REGISTRY: ${{ steps.login-ecr.outputs.registry }}

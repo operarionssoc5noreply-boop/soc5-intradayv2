@@ -118,10 +118,10 @@ function installPollingTrigger() {
   ScriptApp.newTrigger('pollEnrouteAlertWatchRange')
     .timeBased()
     .inTimezone(DEFAULTS.TIME_ZONE)
-    .everyMinutes(5)
+    .everyMinutes(1)
     .create();
 
-  console.log('Installed five-minute polling trigger for pollEnrouteAlertWatchRange.');
+  console.log('Installed near one-minute polling trigger for pollEnrouteAlertWatchRange.');
 }
 
 function checkEnrouteAlertSetup() {
